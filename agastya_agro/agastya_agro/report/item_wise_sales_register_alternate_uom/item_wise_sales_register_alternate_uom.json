@@ -1,0 +1,42 @@
+{
+ "add_total_row": 0,
+ "columns": [],
+ "creation": "2023-12-17 23:25:02.966287",
+ "disable_prepared_report": 0,
+ "disabled": 0,
+ "docstatus": 0,
+ "doctype": "Report",
+ "filters": [],
+ "idx": 0,
+ "is_standard": "Yes",
+ "letter_head": "REUZEit BV",
+ "modified": "2023-12-18 01:57:04.754615",
+ "modified_by": "Administrator",
+ "module": "Agastya Agro",
+ "name": "Item-wise Sales Register Alternate UOM",
+ "owner": "Administrator",
+ "prepared_report": 0,
+ "ref_doctype": "Sales Invoice",
+ "report_name": "Item-wise Sales Register Alternate UOM",
+ "report_type": "Script Report",
+ "roles": [
+  {
+   "role": "Accounts User"
+  },
+  {
+   "role": "Sales User"
+  },
+  {
+   "role": "Accounts Manager"
+  },
+  {
+   "role": "Auditor"
+  },
+  {
+   "role": "Purchase User"
+  },
+  {
+   "role": "Employee Self Service"
+  }
+ ]
+}

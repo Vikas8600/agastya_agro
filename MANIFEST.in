@@ -1,0 +1,18 @@
+include MANIFEST.in
+include requirements.txt
+include *.json
+include *.md
+include *.py
+include *.txt
+recursive-include agastya_agro *.css
+recursive-include agastya_agro *.csv
+recursive-include agastya_agro *.html
+recursive-include agastya_agro *.ico
+recursive-include agastya_agro *.js
+recursive-include agastya_agro *.json
+recursive-include agastya_agro *.md
+recursive-include agastya_agro *.png
+recursive-include agastya_agro *.py
+recursive-include agastya_agro *.svg
+recursive-include agastya_agro *.txt
+recursive-exclude agastya_agro *.pyc
