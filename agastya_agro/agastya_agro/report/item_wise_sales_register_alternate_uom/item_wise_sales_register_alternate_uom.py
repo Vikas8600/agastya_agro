@@ -135,7 +135,52 @@ def _execute(filters=None, additional_table_columns=None, additional_query_colum
 		add_sub_total_row(total_row, total_row_map, 'total_row', tax_columns)
 		data.append(total_row_map.get('total_row'))
 		skip_total_row = 1
+	columns.extend([
+		{
+			'label': _('Item Weight'),
+			'fieldname': 'item_weight',
+			'fieldtype': 'Float',
+			'width': 120
+		},
+		{
+			'label': _('Brand'),
+			'fieldname': 'brand',
+			'fieldtype': 'Data',
+			'width': 120
+		},
+		{
+			'label': _('No Of Cases'),
+			'fieldname': 'cases',
+			'fieldtype': 'Float',
+			'width': 120
+		},
+		{
+			'label': _('Class'),
+			'fieldname': 'item_class',
+			'fieldtype': 'Data',
+			'width': 120
+		},
+		])
+	for d in data:
+		if d.get("item_code") and frappe.db.exists("Item", d.get("item_code")):
+			values_dict = frappe.get_value("Item", d.get("item_code"), ["weight_per_unit", "brand", "class"], as_dict=1)
+			if values_dict:
+				item_weight = values_dict.get("weight_per_unit") or 0
+				brand = values_dict.get("brand") or ""
+				item_class = values_dict.get("class") or ""
 
+				conv_factor = frappe.get_value(
+					"UOM Conversion Detail",
+					{'parent': d.get("item_code"), 'is_alternate_uom': 1},
+					'conversion_factor'
+				)
+
+				d["item_weight"] = flt(d.get("stock_qty")) * flt(item_weight)
+				d["brand"] = brand
+				d["cases"] = (flt(d.get("stock_qty")) / flt(conv_factor)) if conv_factor else 0
+				d["item_class"] = item_class
+
+			# frappe.throw(f"{d} {item_weight} {brand} {item_class}")
 	return columns, data, None, None, None, skip_total_row
 
 def get_columns(additional_table_columns, filters):

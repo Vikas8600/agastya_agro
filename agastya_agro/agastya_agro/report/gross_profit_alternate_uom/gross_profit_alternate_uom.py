@@ -56,7 +56,18 @@ def execute(filters=None):
 
 	# else:
 	get_data_when_not_grouped_by_invoice(gross_profit_data, filters, group_wise_columns, data)
-
+	columns.extend([
+		'Item Weight:Float:100',
+		'Brand:Data:150',
+		'No Of Cases:Data:150',
+		'Class:Data:150',
+		])
+	for d in data:
+		item_weight,brand,item_class = frappe.get_value("Item",d[0],["weight_per_unit","brand","class"]) or ("","","")
+		d.append(flt(d[4]) * flt(frappe.db.get_value("Item", d[0], "weight_per_unit"))),
+		d.append(brand)
+		d.append(flt(d[4]) / flt(frappe.get_value("UOM Conversion Detail", {'parent': d[0] ,'is_alternate_uom': 1 }, 'conversion_factor')) if frappe.get_value("UOM Conversion Detail", {'parent': d[0] ,'is_alternate_uom': 1 }, 'conversion_factor') else 0),
+		d.append(item_class)
 	return columns, data
 
 def get_data_when_grouped_by_invoice(columns, gross_profit_data, filters, group_wise_columns, data):

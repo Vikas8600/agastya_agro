@@ -87,6 +87,50 @@ def execute(filters=None):
 			conversion_factors.append(item_detail.conversion_factor)
 
 	update_included_uom_in_report(columns, data, include_uom, conversion_factors)
+	columns.extend([
+		{
+			'label': _('Item Weight'),
+			'fieldname': 'item_weight',
+			'fieldtype': 'Float',
+			'width': 120
+		},
+		{
+			'label': _('Brand'),
+			'fieldname': 'brand',
+			'fieldtype': 'Data',
+			'width': 120
+		},
+		{
+			'label': _('No Of Cases'),
+			'fieldname': 'cases',
+			'fieldtype': 'Float',
+			'width': 120
+		},
+		{
+			'label': _('Class'),
+			'fieldname': 'item_class',
+			'fieldtype': 'Data',
+			'width': 120
+		},
+		])
+	for d in data:
+		if d.get("item_code") and frappe.db.exists("Item", d.get("item_code")):
+			values_dict = frappe.get_value("Item", d.get("item_code"), ["weight_per_unit", "brand", "class"], as_dict=1)
+			if values_dict:
+				item_weight = values_dict.get("weight_per_unit") or 0
+				brand = values_dict.get("brand") or ""
+				item_class = values_dict.get("class") or ""
+
+				conv_factor = frappe.get_value(
+					"UOM Conversion Detail",
+					{'parent': d.get("item_code"), 'is_alternate_uom': 1},
+					'conversion_factor'
+				)
+
+				d["item_weight"] = flt(d.get("qty_after_transaction")) * flt(item_weight)
+				d["brand"] = brand
+				d["cases"] = (flt(d.get("qty_after_transaction")) / flt(conv_factor)) if conv_factor else 0
+				d["item_class"] = item_class
 	return columns, data
 
 def update_available_serial_nos(available_serial_nos, sle):
