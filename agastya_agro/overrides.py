@@ -155,3 +155,59 @@ class CustomSalesInvoice(SalesInvoice):
             if cint(frappe.db.get_single_value('Selling Settings', 'maintain_same_sales_rate')) and not self.is_return:
                 self.validate_rate_with_reference_doc([["Sales Order", "against_sales_order", "so_detail"],
                     ["Sales Invoice", "against_sales_invoice", "si_detail"]])
+
+
+from bs4 import BeautifulSoup
+from frappe.core.doctype.access_log.access_log import make_access_log
+from frappe.utils.pdf import get_pdf
+
+@frappe.whitelist()
+def report_to_pdf(html, orientation="Landscape"):
+	soup = BeautifulSoup(html, "html.parser")
+
+	filter_rows = soup.select("div.filter-row")
+
+	party_type = None
+	party_value = None
+	for row in filter_rows:
+
+		label = row.find("b")
+		if label:
+			label_text = label.text.strip(":").lower()
+			if label_text == "party type":
+				party_type = row.get_text(strip=True).replace("Party Type:", "").strip()
+			elif label_text == "party":
+				party_value = row.get_text(strip=True).replace("Party:", "").strip()
+
+	if party_type and party_type.lower() == "customer" and party_value:
+		table = soup.find("table")
+		if table:
+			rows = table.find_all("tr")
+
+			if len(rows) > 1:
+				rows[1]['style'] = 'display: none;'
+
+			if len(rows) > 0:
+				rows[-1]['style'] = 'display: none;'
+		city = frappe.db.get_value("Customer", party_value, "city")
+		if city:
+			city_html = f'<div class="filter-row"><b>City:</b> {city}</div>'
+
+			if filter_rows:
+				last_filter = filter_rows[-1]
+				city_div = BeautifulSoup(city_html, "html.parser")
+				last_filter.insert_after(city_div)
+			else:
+				gutter_div = soup.find("div", class_="print-format-gutter")
+				if gutter_div:
+					gutter_div.insert(0, BeautifulSoup(city_html, "html.parser"))
+
+			html = str(soup)
+
+	else:
+		html = str(soup)
+
+	make_access_log(file_type="PDF", method="PDF", page=html)
+	frappe.local.response.filename = "report.pdf"
+	frappe.local.response.filecontent = get_pdf(html, {"orientation": orientation})
+	frappe.local.response.type = "pdf"

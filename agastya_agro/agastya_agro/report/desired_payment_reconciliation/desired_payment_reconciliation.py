@@ -18,7 +18,7 @@ def get_columns(filters):
 		{'label': 'Total','fieldname': 'total','fieldtype': 'Data','width': 120},
 		{'label': 'Allocation amount','fieldname': 'allc_amt','fieldtype': 'Currency','width': 120},
 		{'label': 'Receipt Date','fieldname': 'receipt_date','fieldtype': 'Date','width': 120},
-		{'label': 'Collection amount','fieldname': 'coll_amt','fieldtype': 'Currency','width': 120},
+		{'label': 'Collection amount','fieldname': 'coll_amt','fieldtype': 'Currency','width': 120,"hidden":1},
 		{'label': 'Voucher No','fieldname': 'voucher_no','fieldtype': 'Data','width': 120},
 		{'label': 'Voucher Type','fieldname': 'voucher_type','fieldtype': 'Data','width': 120},
 		{'label': 'Against Account','fieldname': 'against_acc','fieldtype': 'Data','width': 120},
