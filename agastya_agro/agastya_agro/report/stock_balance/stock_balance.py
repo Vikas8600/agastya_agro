@@ -41,6 +41,8 @@ def execute(filters=None):
 	for d in data:
 		if isinstance(d, dict) and d.get("item_code") and frappe.db.exists("Item", d.get("item_code")):
 			values_dict = frappe.get_value("Item", d.get("item_code"), ["weight_per_unit", "brand", "class"], as_dict=1)
+			if filters.get("brand") and filters.get("brand") != values_dict.get("brand"):
+				continue
 			if values_dict:
 				item_weight = values_dict.get("weight_per_unit") or 0
 				brand = values_dict.get("brand") or ""

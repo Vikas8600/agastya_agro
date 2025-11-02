@@ -160,6 +160,31 @@ def _execute(filters=None, additional_table_columns=None, additional_query_colum
 			'fieldtype': 'Data',
 			'width': 120
 		},
+		{
+			'label': _('City'),
+			'fieldname': 'city',
+			'fieldtype': 'Data',
+			'width': 120
+		},
+		{
+			'label': _('Sales Person'),
+			'fieldname': 'sales_person',
+			'fieldtype': 'Data',
+			'width': 120
+		},
+		{
+			'label': _('Parent Sales Person'),
+			'fieldname': 'parent_sales_person',
+			'fieldtype': 'Data',
+			'width': 120
+		},
+		{
+			'label': _('Return Against Invoice'),
+			'fieldname': 'return_invoice',
+			'fieldtype': 'Data',
+			'width': 120
+		},
+
 		])
 	for d in data:
 		if d.get("item_code") and frappe.db.exists("Item", d.get("item_code")):
@@ -179,6 +204,22 @@ def _execute(filters=None, additional_table_columns=None, additional_query_colum
 				d["brand"] = brand
 				d["cases"] = (flt(d.get("stock_qty")) / flt(conv_factor)) if conv_factor else 0
 				d["item_class"] = item_class
+
+		if d.get("customer"):
+			d["city"] = frappe.db.get_value("Customer", d["customer"], "city") or ""
+
+			sales_persons = frappe.db.get_all("Sales Team",
+											filters={"parent": d["customer"]},
+											fields=["sales_person", "parent_sales_person"])
+			if sales_persons:
+				d["sales_person"] = ", ".join([sp.get("sales_person") or "" for sp in sales_persons if sp.get("sales_person")])
+				d["parent_sales_person"] = ", ".join([sp.get("parent_sales_person") or "" for sp in sales_persons if sp.get("parent_sales_person")])
+			else:
+				d["sales_person"] = ""
+				d["parent_sales_person"] = ""
+		if d.get("invoice"):
+			d["return_invoice"] = frappe.db.get_value("Sales Invoice",d["invoice"],"return_against") or ""
+
 
 			# frappe.throw(f"{d} {item_weight} {brand} {item_class}")
 	return columns, data, None, None, None, skip_total_row

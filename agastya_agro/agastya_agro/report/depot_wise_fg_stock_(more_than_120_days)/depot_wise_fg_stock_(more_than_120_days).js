@@ -8,6 +8,7 @@ frappe.query_reports["Depot Wise FG Stock (More than 120 Days)"] = {
      "label": "Company",
      "fieldtype": "Link",
      "options": "Company",
+     "default": frappe.defaults.get_default("company"),
      "reqd": 1
    },
    {
@@ -15,6 +16,13 @@ frappe.query_reports["Depot Wise FG Stock (More than 120 Days)"] = {
      "label": "Posting Date",
      "fieldtype": "Date",
      "default": "Today"
-   }
+   },
+    {
+     "fieldname": "warehouse",
+     "label": "Warehouse",
+     "fieldtype": "Link",
+     "options": "Warehouse",
+   },
+
 ]
 };
