@@ -3,7 +3,7 @@ import frappe
 from frappe.utils import getdate, nowdate, flt, date_diff
 
 def execute(filters=None):
-    item_groups = frappe.get_all("Item Group", pluck="name")
+    item_groups = frappe.get_all("Class", pluck="name")
     columns = get_columns(item_groups)
     data = get_data(filters, item_groups)
     return columns, data
@@ -69,9 +69,9 @@ def get_data(filters, item_groups):
         sle_data = frappe.db.sql("""
             SELECT
                 sle.item_code,
-                i.item_group,
+                i.class as item_group,
                 COALESCE(sle.batch_no, sbbi.batch_no) AS batch_no,
-                SUM(sle.actual_qty * sle.valuation_rate) AS stock_value
+                SUM(sle.stock_value_difference) AS stock_value
             FROM `tabStock Ledger Entry` sle
             LEFT JOIN `tabSerial and Batch Bundle` sbb ON sbb.name = sle.serial_and_batch_bundle
             LEFT JOIN `tabSerial and Batch Entry` sbbi ON sbbi.parent = sbb.name
