@@ -60,7 +60,7 @@ def get_data(company, as_on_date, selected_brand, fiscal_years):
 		query = f"""
 			SELECT
 				item.brand,
-				item.`class` AS item_class,
+				item.class AS item_class,
 				COALESCE(sle.batch_no, sbe.batch_no) AS batch_no,
 				batch.expiry_date,
 				SUM(sle.stock_value_difference) AS stock_value,
@@ -124,7 +124,7 @@ def get_data(company, as_on_date, selected_brand, fiscal_years):
 
 		row = {
 			"brand": brand,
-			"item_group": group,
+			"item_class": group,
 			"total_value": round(total_value, 2),
 			"total_qty": round(total_qty, 2),
 			"average_rate": avg_rate,
@@ -137,7 +137,7 @@ def get_data(company, as_on_date, selected_brand, fiscal_years):
 	# Add Grand Total row
 	grand_totals = {
 		"brand": "Grand Total",
-		"item_group": "",
+		"item_class": "",
 		"total_value": round(sum(r["total_value"] for r in data), 2),
 		"total_qty": round(sum(r["total_qty"] for r in data), 2),
 		"average_rate": 0,
