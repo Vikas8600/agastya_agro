@@ -66,8 +66,8 @@ def get_data(as_on_date, warehouse=None, brand=None, item=None):
 			item.stock_uom AS uom,
 			item.case_per_unit AS case_per_unit,
 			item.weight_per_unit AS wt_per_unit,
-			SUM(sle.actual_qty) AS balance_qty
-			
+			SUM(sle.actual_qty) AS balance_qty,
+			SUM(sle.stock_value_difference) AS stock_value
 		FROM `tabStock Ledger Entry` sle
 		LEFT JOIN `tabSerial and Batch Bundle` sbb ON sbb.name = sle.serial_and_batch_bundle
 		LEFT JOIN `tabSerial and Batch Entry` sbbi ON sbbi.parent = sbb.name
@@ -107,14 +107,14 @@ def get_data(as_on_date, warehouse=None, brand=None, item=None):
 		lt_kg = flt(s.balance_qty) * flt(s.wt_per_unit or 0)
 
 		# Get Valuation Rate
-		valuation_rate = frappe.db.get_value(
-			"Bin",
-			{"item_code": s.item_code, "warehouse": s.warehouse},
-			"valuation_rate",
-			order_by="creation desc"
-		) or 0
+		# valuation_rate = frappe.db.get_value(
+		# 	"Bin",
+		# 	{"item_code": s.item_code, "warehouse": s.warehouse},
+		# 	"valuation_rate",
+		# 	order_by="creation desc"
+		# ) or 0
 
-		value = flt(s.balance_qty) * flt(valuation_rate)
+		# value = flt(s.balance_qty) * flt(valuation_rate)
 
 		# valuation_data = frappe.db.sql("""
 		# 	SELECT valuation_rate
@@ -146,7 +146,7 @@ def get_data(as_on_date, warehouse=None, brand=None, item=None):
 			"balance_qty": s.balance_qty,
 			"lt_kg": lt_kg,
 			"cases": round(cases),
-			"value": value
+			"value": s.stock_value
 		})
 
 	return data
