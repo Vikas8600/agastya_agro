@@ -38,7 +38,7 @@ def get_data(company, as_on_date, selected_warehouse):
 			addr.state,
 			COALESCE(sle.batch_no, sbe.batch_no) AS batch_no,
 			batch.expiry_date,
-			SUM(sle.actual_qty) AS stock_value
+			SUM(sle.stock_value_difference) AS stock_value
 		FROM `tabStock Ledger Entry` sle
 		LEFT JOIN `tabSerial and Batch Bundle` sbb 
 			ON sbb.name = sle.serial_and_batch_bundle
