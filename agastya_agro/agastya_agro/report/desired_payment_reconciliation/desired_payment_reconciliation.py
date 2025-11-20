@@ -39,8 +39,9 @@ def get_data(filters):
 		si_filters["posting_date"] = ["between",[f_date,t_date]]
 	if inv_no:
 		si_filters["name"] = inv_no
-
-	invoices = frappe.get_all("Sales Invoice",si_filters,["name","customer","customer_name","posting_date","rounded_total"])
+	frappe.msgprint(str(si_filters))
+	invoices = frappe.get_all("Sales Invoice",si_filters,["name","customer","customer_name","posting_date","rounded_total"],order_by="posting_date DESC")
+	# frappe.throw(str([i["name"] for i in invoices]))
 	shown_invoices = []
 	for invoice in invoices:
 		unique_pe = frappe.get_all("Payment Entry Reference",{"docstatus":1,"reference_doctype":"Sales Invoice","reference_name":invoice.get("name")},"distinct(parent) as parent")
