@@ -34,75 +34,75 @@ frappe.query_reports["Stock-Balance"] = {
 			width: "80",
 			options: "Item Group",
 		},
-		// {
-		// 	fieldname: "item_code",
-		// 	label: __("Items"),
-		// 	fieldtype: "MultiSelectList",
-		// 	width: "80",
-		// 	options: "Item",
-		// 	get_data: async function (txt) {
-		// 		let item_group = frappe.query_report.get_filter_value("item_group");
-
-		// 		let filters = {
-		// 			...(item_group && { item_group }),
-		// 			is_stock_item: 1,
-		// 		};
-
-		// 		let { message: data } = await frappe.call({
-		// 			method: "erpnext.controllers.queries.item_query",
-		// 			args: {
-		// 				doctype: "Item",
-		// 				txt: txt,
-		// 				searchfield: "name",
-		// 				start: 0,
-		// 				page_len: 10,
-		// 				filters: filters,
-		// 				as_dict: 1,
-		// 			},
-		// 		});
-
-		// 		data = data.map(({ name, ...rest }) => {
-		// 			return {
-		// 				value: name,
-		// 				description: Object.values(rest),
-		// 			};
-		// 		});
-
-		// 		return data || [];
-		// 	},
-		// },
-		// {
-		// 	fieldname: "warehouse",
-		// 	label: __("Warehouses"),
-		// 	fieldtype: "MultiSelectList",
-		// 	width: "80",
-		// 	options: "Warehouse",
-		// 	get_data: (txt) => {
-		// 		let warehouse_type = frappe.query_report.get_filter_value("warehouse_type");
-		// 		let company = frappe.query_report.get_filter_value("company");
-
-		// 		let filters = {
-		// 			...(warehouse_type && { warehouse_type }),
-		// 			...(company && { company }),
-		// 		};
-
-		// 		return frappe.db.get_link_options("Warehouse", txt, filters);
-		// 	},
-		// },
 		{
 			fieldname: "item_code",
-			label: __("Item"),
-			fieldtype: "Link",
+			label: __("Items"),
+			fieldtype: "MultiSelectList",
 			width: "80",
 			options: "Item",
+			get_data: async function (txt) {
+				let item_group = frappe.query_report.get_filter_value("item_group");
+
+				let filters = {
+					...(item_group && { item_group }),
+					is_stock_item: 1,
+				};
+
+				let { message: data } = await frappe.call({
+					method: "erpnext.controllers.queries.item_query",
+					args: {
+						doctype: "Item",
+						txt: txt,
+						searchfield: "name",
+						start: 0,
+						page_len: 10,
+						filters: filters,
+						as_dict: 1,
+					},
+				});
+
+				data = data.map(({ name, ...rest }) => {
+					return {
+						value: name,
+						description: Object.values(rest),
+					};
+				});
+
+				return data || [];
+			},
 		},
 		{
 			fieldname: "warehouse",
-			label: __("Warehouse"),
-			fieldtype: "Link",
+			label: __("Warehouses"),
+			fieldtype: "MultiSelectList",
 			width: "80",
 			options: "Warehouse",
+			get_data: (txt) => {
+				let warehouse_type = frappe.query_report.get_filter_value("warehouse_type");
+				let company = frappe.query_report.get_filter_value("company");
+
+				let filters = {
+					...(warehouse_type && { warehouse_type }),
+					...(company && { company }),
+				};
+
+				return frappe.db.get_link_options("Warehouse", txt, filters);
+			},
 		},
+		// {
+		// 	fieldname: "item_code",
+		// 	label: __("Item"),
+		// 	fieldtype: "Link",
+		// 	width: "80",
+		// 	options: "Item",
+		// },
+		// {
+		// 	fieldname: "warehouse",
+		// 	label: __("Warehouse"),
+		// 	fieldtype: "Link",
+		// 	width: "80",
+		// 	options: "Warehouse",
+		// },
 		{
 			fieldname: "warehouse_type",
 			label: __("Warehouse Type"),
