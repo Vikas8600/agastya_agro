@@ -13,25 +13,28 @@ frappe.query_reports["Desired Payment Reconciliation"] = {
 			reqd:1
 		},
 		{
-			fieldname: "customer",
-			label: __("Customer"),
-			fieldtype: "Link",
-			width: "80",
-			options: "Customer",
-			reqd:1
-		},
-		{
 			fieldname: "f_date",
 			label: __("From Date"),
 			fieldtype: "Date",
 			width: "80",
-
+			reqd:1
+			
 		},
 		{
 			fieldname: "t_date",
 			label: __("To Date"),
 			fieldtype: "Date",
 			width: "80",
+			reqd:1
+			
+		},
+		{
+			fieldname: "customer",
+			label: __("Customer"),
+			fieldtype: "Link",
+			width: "80",
+			options: "Customer",
+			reqd:0
 		},
 		{
 			fieldname: "inv_no",

@@ -40,6 +40,12 @@ frappe.query_reports["Batch-Wise Balance Summary"] = {
 				};
 			},
 		},
+			{
+			fieldname: "brand",
+			label: __("Brand"),
+			fieldtype: "Link",
+			options: "Brand",
+		},
 		{
 			fieldname: "warehouse_type",
 			label: __("Warehouse Type"),

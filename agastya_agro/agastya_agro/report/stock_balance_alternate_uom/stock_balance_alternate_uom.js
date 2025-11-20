@@ -48,6 +48,13 @@ frappe.query_reports["Stock Balance Alternate UOM"] = {
 			}
 		},
 		{
+			"fieldname": "brand",
+			"label": "Brand",
+			"fieldtype": "Link",
+			"options": "Brand"
+		},	
+
+		{
 			"fieldname": "warehouse",
 			"label": __("Warehouse"),
 			"fieldtype": "Link",

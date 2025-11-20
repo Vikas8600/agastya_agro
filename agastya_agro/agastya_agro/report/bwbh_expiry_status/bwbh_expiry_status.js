@@ -42,6 +42,12 @@ frappe.query_reports["BWBH Expiry Status"] = {
             "label": "Warehouse",
             "fieldtype": "Link",
             "options": "Warehouse"
+        },
+        {
+            "fieldname": "brand",
+            "label": "Brand",
+            "fieldtype": "Link",
+            "options": "Brand"
         }
     ]
 };

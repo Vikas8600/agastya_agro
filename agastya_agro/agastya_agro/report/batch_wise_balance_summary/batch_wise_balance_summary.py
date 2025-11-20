@@ -14,7 +14,23 @@ def execute(filters=None):
         _("Brand") + ":Data:120",
         _("Class") + ":Data:120",
     ])
+    
+    brand_filter = filters.get("brand")
 
+    if brand_filter:
+        # Fetch all items with this brand
+        brand_items = set(
+            frappe.get_all("Item",
+                filters={"brand": brand_filter},
+                pluck="name"
+            )
+        )
+
+        # Keep only rows whose item is in brand_items
+        data = [
+            row for row in data
+            if isinstance(row, dict) and row.get("item") in brand_items
+        ]
     new_data = []
     for row in data:
         # Handle dict rows only
