@@ -157,57 +157,133 @@ class CustomSalesInvoice(SalesInvoice):
                     ["Sales Invoice", "against_sales_invoice", "si_detail"]])
 
 
+# from bs4 import BeautifulSoup
+# from frappe.core.doctype.access_log.access_log import make_access_log
+# from frappe.utils.pdf import get_pdf
+
+# @frappe.whitelist()
+# def report_to_pdf(html, orientation="Landscape"):
+#     soup = BeautifulSoup(html, "html.parser")
+
+#     filter_rows = soup.select("div.filter-row")
+
+#     party_type = None
+#     party_value = None
+#     for row in filter_rows:
+
+#         label = row.find("b")
+#         if label:
+#             label_text = label.text.strip(":").lower()
+#             if label_text == "party type":
+#                 party_type = row.get_text(strip=True).replace("Party Type:", "").strip()
+#             elif label_text == "party":
+#                 party_value = row.get_text(strip=True).replace("Party:", "").strip()
+
+#     if party_type and party_type.lower() == "customer" and party_value:
+#         table = soup.find("table")
+#         if table:
+#             rows = table.find_all("tr")
+#             # frappe.throw(str(rows))
+#             if len(rows) > 1:
+#                 rows[1]['style'] = 'display: none;'
+
+#             # if len(rows) > 0:
+#             #     rows[-1]['style'] = 'display: none;'
+#         city = frappe.db.get_value("Customer", party_value, "city")
+#         if city:
+#             city_html = f'<div class="filter-row"><b>City:</b> {city}</div>'
+
+#             if filter_rows:
+#                 last_filter = filter_rows[-1]
+#                 city_div = BeautifulSoup(city_html, "html.parser")
+#                 last_filter.insert_after(city_div)
+#             else:
+#                 gutter_div = soup.find("div", class_="print-format-gutter")
+#                 if gutter_div:
+#                     gutter_div.insert(0, BeautifulSoup(city_html, "html.parser"))
+
+#             html = str(soup)
+
+#     else:
+#         html = str(soup)
+
+#     make_access_log(file_type="PDF", method="PDF", page=html)
+#     frappe.local.response.filename = "report.pdf"
+#     frappe.local.response.filecontent = get_pdf(html, {"orientation": orientation})
+#     frappe.local.response.type = "pdf"
+
 from bs4 import BeautifulSoup
 from frappe.core.doctype.access_log.access_log import make_access_log
 from frappe.utils.pdf import get_pdf
 
+
 @frappe.whitelist()
 def report_to_pdf(html, orientation="Landscape"):
-	soup = BeautifulSoup(html, "html.parser")
+    soup = BeautifulSoup(html, "html.parser")
 
-	filter_rows = soup.select("div.filter-row")
+    filter_rows = soup.select("div.filter-row")
 
-	party_type = None
-	party_value = None
-	for row in filter_rows:
+    party_type = None
+    party_value = None
+    for row in filter_rows:
+        label = row.find("b")
+        if label:
+            label_text = label.text.strip(":").lower()
+            if label_text == "party type":
+                party_type = row.get_text(strip=True).replace("Party Type:", "").strip()
+            elif label_text == "party":
+                party_value = row.get_text(strip=True).replace("Party:", "").strip()
 
-		label = row.find("b")
-		if label:
-			label_text = label.text.strip(":").lower()
-			if label_text == "party type":
-				party_type = row.get_text(strip=True).replace("Party Type:", "").strip()
-			elif label_text == "party":
-				party_value = row.get_text(strip=True).replace("Party:", "").strip()
+    if party_type and party_type.lower() == "customer" and party_value:
+        table = soup.find("table")
+        if table:
+            rows = table.find_all("tr")
 
-	if party_type and party_type.lower() == "customer" and party_value:
-		table = soup.find("table")
-		if table:
-			rows = table.find_all("tr")
+            # Find the header row to get column indices
+            header_row = rows[0]
+            headers = header_row.find_all("th")
 
-			if len(rows) > 1:
-				rows[1]['style'] = 'display: none;'
+            # Find indices of Debit and Credit columns
+            debit_index = None
+            credit_index = None
 
-			if len(rows) > 0:
-				rows[-1]['style'] = 'display: none;'
-		city = frappe.db.get_value("Customer", party_value, "city")
-		if city:
-			city_html = f'<div class="filter-row"><b>City:</b> {city}</div>'
+            for idx, header in enumerate(headers):
+                header_text = header.get_text(strip=True).lower()
+                if "debit" in header_text:
+                    debit_index = idx
+                elif "credit" in header_text:
+                    credit_index = idx
 
-			if filter_rows:
-				last_filter = filter_rows[-1]
-				city_div = BeautifulSoup(city_html, "html.parser")
-				last_filter.insert_after(city_div)
-			else:
-				gutter_div = soup.find("div", class_="print-format-gutter")
-				if gutter_div:
-					gutter_div.insert(0, BeautifulSoup(city_html, "html.parser"))
+            # Clear only first data row (rows[1]) Debit and Credit values
+            if len(rows) > 1:
+                first_data_row = rows[1]
+                cells = first_data_row.find_all(["td", "th"])
+                if debit_index is not None and debit_index < len(cells):
+                    cells[debit_index].string = ""
+                if credit_index is not None and credit_index < len(cells):
+                    cells[credit_index].string = ""
 
-			html = str(soup)
+        city = frappe.db.get_value("Customer", party_value, "city")
+        if city:
+            city_html = f'<div class="filter-row"><b>City:</b> {city}</div>'
 
-	else:
-		html = str(soup)
+            if filter_rows:
+                last_filter = filter_rows[-1]
+                city_div = BeautifulSoup(city_html, "html.parser")
+                last_filter.insert_after(city_div)
+            else:
+                gutter_div = soup.find("div", class_="print-format-gutter")
+                if gutter_div:
+                    gutter_div.insert(0, BeautifulSoup(city_html, "html.parser"))
 
-	make_access_log(file_type="PDF", method="PDF", page=html)
-	frappe.local.response.filename = "report.pdf"
-	frappe.local.response.filecontent = get_pdf(html, {"orientation": orientation})
-	frappe.local.response.type = "pdf"
+            html = str(soup)
+        else:
+            html = str(soup)
+    else:
+        html = str(soup)
+
+    make_access_log(file_type="PDF", method="PDF", page=html)
+    frappe.local.response.filename = "report.pdf"
+    frappe.local.response.filecontent = get_pdf(html, {"orientation": orientation})
+    frappe.local.response.type = "pdf"
+
