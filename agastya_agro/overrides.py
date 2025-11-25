@@ -350,6 +350,102 @@ class CustomSalesInvoice(SalesInvoice):
 
 
 
+# from bs4 import BeautifulSoup
+# from frappe.core.doctype.access_log.access_log import make_access_log
+# from frappe.utils.pdf import get_pdf
+# import frappe
+
+
+# @frappe.whitelist()
+# def report_to_pdf(html, orientation="Landscape"):
+#     soup = BeautifulSoup(html, "html.parser")
+
+#     filter_rows = soup.select("div.filter-row")
+
+#     party_type = None
+#     party_value_raw = None
+#     party_values = []
+#     party_row = None
+
+#     # Extract Party Type and Party (may contain multiple)
+#     for row in filter_rows:
+#         label = row.find("b")
+#         if label:
+#             label_text = label.text.strip(":").lower()
+#             if label_text == "party type":
+#                 party_type = row.get_text(strip=True).replace("Party Type:", "").strip()
+#             elif label_text == "party":
+#                 party_row = row
+#                 party_value_raw = row.get_text(strip=True).replace("Party:", "").strip()
+
+#     # Split multiple parties: "2AD140,2AD281" -> ["2AD140", "2AD281"]
+#     if party_value_raw:
+#         party_values = [p.strip() for p in party_value_raw.split(",") if p.strip()]
+
+#     # Use first party for debit/credit hide logic
+#     first_party = party_values[0] if party_values else None
+
+#     if party_type and party_type.lower() == "customer" and first_party:
+#         table = soup.find("table")
+#         if table:
+#             rows = table.find_all("tr")
+
+#             # Find column indices for Debit and Credit
+#             if rows:
+#                 header_row = rows[0]
+#                 headers = header_row.find_all("th")
+
+#                 debit_index = None
+#                 credit_index = None
+
+#                 for idx, header in enumerate(headers):
+#                     header_text = header.get_text(strip=True).lower()
+#                     if "debit" in header_text:
+#                         debit_index = idx
+#                     elif "credit" in header_text:
+#                         credit_index = idx
+
+#                 # Clear Debit and Credit in first data row
+#                 if len(rows) > 1:
+#                     first_data_row = rows[1]
+#                     cells = first_data_row.find_all(["td", "th"])
+#                     if debit_index is not None and debit_index < len(cells):
+#                         cells[debit_index].string = ""
+#                     if credit_index is not None and credit_index < len(cells):
+#                         cells[credit_index].string = ""
+
+#                 # Clear Debit and Credit in last data row
+#                 if len(rows) > 2:
+#                     last_data_row = rows[-1]
+#                     cells = last_data_row.find_all(["td", "th"])
+#                     if debit_index is not None and debit_index < len(cells):
+#                         cells[debit_index].string = ""
+#                     if credit_index is not None and credit_index < len(cells):
+#                         cells[credit_index].string = ""
+
+#     # Insert City div(s) immediately after the Party row using insert_after on party_row tag
+#     if party_row and party_values:
+#         last_inserted = party_row
+#         for pv in party_values:
+#             city = frappe.db.get_value("Customer", pv, "city")
+#             if city:
+#                 city_div = soup.new_tag("div", **{"class": "filter-row"})
+#                 b_tag = soup.new_tag("b")
+#                 b_tag.string = "City:"
+#                 city_div.append(b_tag)
+#                 city_div.append(" " + city)
+#                 last_inserted.insert_after(city_div)
+#                 last_inserted = city_div  # chain insert after newly inserted
+
+#         html = str(soup)
+#     else:
+#         html = str(soup)
+
+#     make_access_log(file_type="PDF", method="PDF", page=html)
+#     frappe.local.response.filename = "report.pdf"
+#     frappe.local.response.filecontent = get_pdf(html, {"orientation": orientation})
+#     frappe.local.response.type = "pdf"
+
 from bs4 import BeautifulSoup
 from frappe.core.doctype.access_log.access_log import make_access_log
 from frappe.utils.pdf import get_pdf
@@ -366,8 +462,9 @@ def report_to_pdf(html, orientation="Landscape"):
     party_value_raw = None
     party_values = []
     party_row = None
+    party_name_row = None
 
-    # Extract Party Type and Party (may contain multiple)
+    # Extract necessary filter rows: Party Type, Party, Party Name (if exists)
     for row in filter_rows:
         label = row.find("b")
         if label:
@@ -377,12 +474,13 @@ def report_to_pdf(html, orientation="Landscape"):
             elif label_text == "party":
                 party_row = row
                 party_value_raw = row.get_text(strip=True).replace("Party:", "").strip()
+            elif label_text == "party name":
+                party_name_row = row
 
-    # Split multiple parties: "2AD140,2AD281" -> ["2AD140", "2AD281"]
+    # Split Party into individual values if multiple
     if party_value_raw:
         party_values = [p.strip() for p in party_value_raw.split(",") if p.strip()]
 
-    # Use first party for debit/credit hide logic
     first_party = party_values[0] if party_values else None
 
     if party_type and party_type.lower() == "customer" and first_party:
@@ -390,13 +488,12 @@ def report_to_pdf(html, orientation="Landscape"):
         if table:
             rows = table.find_all("tr")
 
-            # Find the header row to get column indices
+            debit_index = None
+            credit_index = None
+
             if rows:
                 header_row = rows[0]
                 headers = header_row.find_all("th")
-
-                debit_index = None
-                credit_index = None
 
                 for idx, header in enumerate(headers):
                     header_text = header.get_text(strip=True).lower()
@@ -405,7 +502,6 @@ def report_to_pdf(html, orientation="Landscape"):
                     elif "credit" in header_text:
                         credit_index = idx
 
-                # Clear Debit and Credit in first data row
                 if len(rows) > 1:
                     first_data_row = rows[1]
                     cells = first_data_row.find_all(["td", "th"])
@@ -414,7 +510,6 @@ def report_to_pdf(html, orientation="Landscape"):
                     if credit_index is not None and credit_index < len(cells):
                         cells[credit_index].string = ""
 
-                # Clear Debit and Credit in last data row
                 if len(rows) > 2:
                     last_data_row = rows[-1]
                     cells = last_data_row.find_all(["td", "th"])
@@ -423,18 +518,11 @@ def report_to_pdf(html, orientation="Landscape"):
                     if credit_index is not None and credit_index < len(cells):
                         cells[credit_index].string = ""
 
-    # Insert City div(s) immediately after Party row
-    if party_row and party_values:
-        parent = party_row.parent
-        siblings = list(parent.children)
-        tag_siblings = [child for child in siblings if getattr(child, "name", None)]
-        try:
-            idx = tag_siblings.index(party_row)
-        except ValueError:
-            idx = -1
+    # Determine insertion point: below Party Name if exists else below Party
+    insertion_row = party_name_row if party_name_row else party_row
 
-        insert_pos = idx + 1 if idx >= 0 else len(tag_siblings)
-
+    if insertion_row and party_values:
+        last_inserted = insertion_row
         for pv in party_values:
             city = frappe.db.get_value("Customer", pv, "city")
             if city:
@@ -443,8 +531,8 @@ def report_to_pdf(html, orientation="Landscape"):
                 b_tag.string = "City:"
                 city_div.append(b_tag)
                 city_div.append(" " + city)
-                parent.insert(insert_pos, city_div)
-                insert_pos += 1
+                last_inserted.insert_after(city_div)
+                last_inserted = city_div  # next city after the last inserted div
 
         html = str(soup)
     else:
@@ -454,3 +542,4 @@ def report_to_pdf(html, orientation="Landscape"):
     frappe.local.response.filename = "report.pdf"
     frappe.local.response.filecontent = get_pdf(html, {"orientation": orientation})
     frappe.local.response.type = "pdf"
+
