@@ -24,7 +24,8 @@ frappe.ui.form.on('Delivery Note', {
                         pr_doc.company = frm.doc.company;
                         pr_doc.cost_center = frm.doc.custom_to_depot_name;
                         pr_doc.set_warehouse = (await frappe.db.get_value("Cost Center", frm.doc.custom_to_depot_name, "finished_good_warehouse")).message.finished_good_warehouse;
-
+                        pr_doc.supplier_address = frm.doc.company_address
+                        pr_doc.billing_address = frm.doc.customer_address
                         let has_remaining_items = false;
 
                         for (const item of frm.doc.items || []) {
