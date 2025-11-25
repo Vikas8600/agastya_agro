@@ -17,6 +17,7 @@ def get_columns(filters):
 		{'label': 'Posting Date','fieldname': 'posting_date','fieldtype': 'Date','width': 120},
 		{'label': 'Total','fieldname': 'total','fieldtype': 'Data','width': 120},
 		{'label': 'Allocation amount','fieldname': 'allc_amt','fieldtype': 'Currency','width': 120},
+		{'label': 'Balance amount','fieldname': 'bal_amt','fieldtype': 'Currency','width': 120},
 		{'label': 'Receipt Date','fieldname': 'receipt_date','fieldtype': 'Date','width': 120},
 		{'label': 'Collection amount','fieldname': 'coll_amt','fieldtype': 'Currency','width': 120,"hidden":1},
 		{'label': 'Voucher No','fieldname': 'voucher_no','fieldtype': 'Data','width': 120},
@@ -40,7 +41,7 @@ def get_data(filters):
 	if inv_no:
 		si_filters["name"] = inv_no
 	frappe.msgprint(str(si_filters))
-	invoices = frappe.get_all("Sales Invoice",si_filters,["name","customer","customer_name","posting_date","rounded_total"],order_by="posting_date DESC")
+	invoices = frappe.get_all("Sales Invoice",si_filters,["name","customer","customer_name","posting_date","rounded_total","outstanding_amount"],order_by="posting_date DESC")
 	# frappe.throw(str([i["name"] for i in invoices]))
 	shown_invoices = []
 	for invoice in invoices:
@@ -53,6 +54,7 @@ def get_data(filters):
 			if invoice.get("name") not in shown_invoices:
 				data_dict["inv_no"] = invoice.get("name")
 				data_dict["total"] = frappe.utils.fmt_money(invoice.get("rounded_total"),precision=2,currency="INR")
+				data_dict["bal_amt"] = invoice.get("outstanding_amount")
 				shown_invoices.append(invoice.get("name"))
 			else:
 				data_dict["inv_no"] = ""
@@ -77,6 +79,8 @@ def get_data(filters):
 			if invoice.get("name") not in shown_invoices:
 				data_dict["inv_no"] = invoice.get("name")
 				data_dict["total"] = frappe.utils.fmt_money(invoice.get("rounded_total"),precision=2,currency="INR")
+				data_dict["bal_amt"] = invoice.get("outstanding_amount")
+
 				shown_invoices.append(invoice.get("name"))
 			else:
 				data_dict["inv_no"] = ""

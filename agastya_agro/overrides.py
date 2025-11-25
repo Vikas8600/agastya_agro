@@ -157,9 +157,12 @@ class CustomSalesInvoice(SalesInvoice):
                     ["Sales Invoice", "against_sales_invoice", "si_detail"]])
 
 
+
+
 # from bs4 import BeautifulSoup
 # from frappe.core.doctype.access_log.access_log import make_access_log
 # from frappe.utils.pdf import get_pdf
+
 
 # @frappe.whitelist()
 # def report_to_pdf(html, orientation="Landscape"):
@@ -170,7 +173,6 @@ class CustomSalesInvoice(SalesInvoice):
 #     party_type = None
 #     party_value = None
 #     for row in filter_rows:
-
 #         label = row.find("b")
 #         if label:
 #             label_text = label.text.strip(":").lower()
@@ -183,12 +185,31 @@ class CustomSalesInvoice(SalesInvoice):
 #         table = soup.find("table")
 #         if table:
 #             rows = table.find_all("tr")
-#             # frappe.throw(str(rows))
-#             if len(rows) > 1:
-#                 rows[1]['style'] = 'display: none;'
 
-#             # if len(rows) > 0:
-#             #     rows[-1]['style'] = 'display: none;'
+#             # Find the header row to get column indices
+#             header_row = rows[0]
+#             headers = header_row.find_all("th")
+
+#             # Find indices of Debit and Credit columns
+#             debit_index = None
+#             credit_index = None
+
+#             for idx, header in enumerate(headers):
+#                 header_text = header.get_text(strip=True).lower()
+#                 if "debit" in header_text:
+#                     debit_index = idx
+#                 elif "credit" in header_text:
+#                     credit_index = idx
+
+#             # Clear only first data row (rows[1]) Debit and Credit values
+#             if len(rows) > 1:
+#                 first_data_row = rows[1]
+#                 cells = first_data_row.find_all(["td", "th"])
+#                 if debit_index is not None and debit_index < len(cells):
+#                     cells[debit_index].string = ""
+#                 if credit_index is not None and credit_index < len(cells):
+#                     cells[credit_index].string = ""
+
 #         city = frappe.db.get_value("Customer", party_value, "city")
 #         if city:
 #             city_html = f'<div class="filter-row"><b>City:</b> {city}</div>'
@@ -203,7 +224,8 @@ class CustomSalesInvoice(SalesInvoice):
 #                     gutter_div.insert(0, BeautifulSoup(city_html, "html.parser"))
 
 #             html = str(soup)
-
+#         else:
+#             html = str(soup)
 #     else:
 #         html = str(soup)
 
@@ -215,6 +237,7 @@ class CustomSalesInvoice(SalesInvoice):
 from bs4 import BeautifulSoup
 from frappe.core.doctype.access_log.access_log import make_access_log
 from frappe.utils.pdf import get_pdf
+import frappe
 
 
 @frappe.whitelist()
@@ -240,28 +263,39 @@ def report_to_pdf(html, orientation="Landscape"):
             rows = table.find_all("tr")
 
             # Find the header row to get column indices
-            header_row = rows[0]
-            headers = header_row.find_all("th")
+            if rows:
+                header_row = rows[0]
+                headers = header_row.find_all("th")
 
-            # Find indices of Debit and Credit columns
-            debit_index = None
-            credit_index = None
+                # Find indices of Debit and Credit columns
+                debit_index = None
+                credit_index = None
 
-            for idx, header in enumerate(headers):
-                header_text = header.get_text(strip=True).lower()
-                if "debit" in header_text:
-                    debit_index = idx
-                elif "credit" in header_text:
-                    credit_index = idx
+                for idx, header in enumerate(headers):
+                    header_text = header.get_text(strip=True).lower()
+                    if "debit" in header_text:
+                        debit_index = idx
+                    elif "credit" in header_text:
+                        credit_index = idx
 
-            # Clear only first data row (rows[1]) Debit and Credit values
-            if len(rows) > 1:
-                first_data_row = rows[1]
-                cells = first_data_row.find_all(["td", "th"])
-                if debit_index is not None and debit_index < len(cells):
-                    cells[debit_index].string = ""
-                if credit_index is not None and credit_index < len(cells):
-                    cells[credit_index].string = ""
+                # Clear first data row (rows[1]) Debit and Credit values
+                if len(rows) > 1:
+                    first_data_row = rows[1]
+                    cells = first_data_row.find_all(["td", "th"])
+                    if debit_index is not None and debit_index < len(cells):
+                        cells[debit_index].string = ""
+                    if credit_index is not None and credit_index < len(cells):
+                        cells[credit_index].string = ""
+
+                # Clear last data row Debit and Credit values
+                # Ensure there is at least 2 data rows (header + at least 2 rows)
+                if len(rows) > 2:
+                    last_data_row = rows[-1]
+                    cells = last_data_row.find_all(["td", "th"])
+                    if debit_index is not None and debit_index < len(cells):
+                        cells[debit_index].string = ""
+                    if credit_index is not None and credit_index < len(cells):
+                        cells[credit_index].string = ""
 
         city = frappe.db.get_value("Customer", party_value, "city")
         if city:
@@ -286,4 +320,5 @@ def report_to_pdf(html, orientation="Landscape"):
     frappe.local.response.filename = "report.pdf"
     frappe.local.response.filecontent = get_pdf(html, {"orientation": orientation})
     frappe.local.response.type = "pdf"
+
 
