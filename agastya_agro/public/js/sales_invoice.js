@@ -42,7 +42,9 @@ frappe.ui.form.on('Sales Invoice', {
                 pi_doc.company = pr_data.company;
                 pi_doc.supplier = pr_data.supplier;
                 pi_doc.posting_date = frappe.datetime.get_today();
-
+                pi_doc.cost_center = pr_data.cost_center
+                pi_doc.supplier_address = pr_data.supplier_address
+                pi_doc.billing_address =  pr_data.billing_address
                 // Link sales invoice on parent level
                 pi_doc.custom_sales_invoice = frm.doc.name;
 

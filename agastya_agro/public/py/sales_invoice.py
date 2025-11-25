@@ -29,7 +29,9 @@ def get_remaining_pr_items(pr_list, sales_invoice):
     for pr_name in pr_list:
         pr = frappe.get_doc("Purchase Receipt", pr_name)
         supplier = supplier or pr.supplier
-
+        cost_center = pr.cost_center
+        supplier_address = pr.supplier_address
+        billing_address = pr.billing_address
         for d in pr.items:
 
             si_row = next((i for i in si_doc.items if i.name == d.custom_delivery_note_detail), None)
@@ -66,6 +68,9 @@ def get_remaining_pr_items(pr_list, sales_invoice):
     return {
         "supplier": supplier,
         "company": company,
+        "cost_center":cost_center,
+        "supplier_address":supplier_address,
+        "billing_address":billing_address,
         "items": pr_items
     }
 
