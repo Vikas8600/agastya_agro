@@ -5,7 +5,7 @@ def execute(filters=None):
     filters = filters or {}
     posting_date = getdate(filters.get("posting_date") or nowdate())
     company = filters.get("company")
-    selected_brand = filters.get("brand")  # Single brand
+    selected_brand = filters.get("brand")  
 
     depots = get_depots()
     columns = get_columns(depots)
@@ -13,7 +13,6 @@ def execute(filters=None):
     return columns, data
 
 def get_depots():
-    # Return list of all active non-group warehouses
     return frappe.get_all("Warehouse", filters={"disabled": 0, "is_group": 0}, pluck="name")
 
 def get_columns(depots):
