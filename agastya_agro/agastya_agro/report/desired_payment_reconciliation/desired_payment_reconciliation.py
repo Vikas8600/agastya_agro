@@ -91,8 +91,10 @@ def get_data(filters):
 			data_dict["voucher_type"] = "Journal Entry"
 			data_dict["against_acc"] = frappe.get_value("Journal Entry Account",{"debit_in_account_currency":[">",0],"parent":jv.get("parent")},"account")
 			data_dict["days"] = date_diff(receipt_date, invoice.get("posting_date"))
-			data_dict["coll_amt"] = frappe.get_all("Journal Entry Account",{"docstatus":1,"reference_type":"Sales Invoice","reference_name":invoice.get("name"),"parent":jv.get("parent")},"sum(credit_in_account_currency) as amt")[0].get("amt") or 0
+			data_dict["coll_amt"] = frappe.get_all("Journal Entry Account",{"docstatus":1,"party":invoice.get("customer"),"party_type":"Customer","parent":jv.get("parent")},"sum(credit_in_account_currency) as amt")[0].get("amt") or 0
 
 			data.append(data_dict)
 
 	return data
+
+	# "reference_type":"Sales Invoice","reference_name":invoice.get("name"),
