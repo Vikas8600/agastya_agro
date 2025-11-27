@@ -62,12 +62,6 @@ def get_columns():
 			"options": "Purchase Invoice",
 			"width": 180,
 		},
-		{
-			"label": _("Transfer Status"),
-			"fieldname": "transfer_status",
-			"fieldtype": "Data",
-			"width": 150,
-		},
 	]
 
 
@@ -231,10 +225,6 @@ def get_data(filters):
 				data.append(row)
 				row_count += 1
 
-	# Apply transfer status filter if specified
-	if filters.get("transfer_status"):
-		data = [d for d in data if d.get("transfer_status") == filters.get("transfer_status")]
-
 	return data
 
 
@@ -304,25 +294,7 @@ def build_row(sales_order_data, delivery_note_data, purchase_receipt_data, sales
 		"purchase_invoice": purchase_invoice_data.get("purchase_invoice"),
 	}
 
-	# Determine transfer status
-	row["transfer_status"] = get_transfer_status(row)
-
 	return row
-
-
-def get_transfer_status(row):
-	if row.get("purchase_invoice"):
-		return "Completed"
-	elif row.get("sales_invoice") and not row.get("purchase_invoice"):
-		return "Purchase Invoice Pending"
-	elif row.get("purchase_receipt") and not row.get("sales_invoice"):
-		return "Sales Invoice Pending"
-	elif row.get("delivery_note") and not row.get("purchase_receipt"):
-		return "Purchase Receipt Pending"
-	elif row.get("sales_order") and not row.get("delivery_note"):
-		return "Delivery Note Pending"
-	else:
-		return "In Progress"
 
 
 def get_conditions(filters):
@@ -345,8 +317,5 @@ def get_conditions(filters):
 	if filters.get("customer"):
 		conditions["sales_order_conditions"] += f" AND so.customer = '{filters.get('customer')}'"
 		conditions["delivery_note_conditions"] += f" AND dn.customer = '{filters.get('customer')}'"
-
-	if filters.get("to_depot"):
-		conditions["delivery_note_conditions"] += f" AND dn.custom_to_depot_name = '{filters.get('to_depot')}'"
 
 	return conditions
