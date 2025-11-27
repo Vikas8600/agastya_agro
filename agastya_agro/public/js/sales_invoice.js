@@ -75,7 +75,7 @@ frappe.ui.form.on('Sales Invoice', {
     }
     },
     onload_post_render: async function(frm){
-        if(frm.doc.customer){  
+        if(frm.doc.customer && frm.is_new()){  
             const is_internal_transfer = (await frappe.db.get_value("Customer", frm.doc.customer, "custom_is_internal_transfer")).message.custom_is_internal_transfer;
             if(is_internal_transfer){
 
@@ -86,7 +86,7 @@ frappe.ui.form.on('Sales Invoice', {
         }
     },
     customer: async function(frm){
-        if(frm.doc.customer){  
+        if(frm.doc.customer && frm.is_new()){  
             const is_internal_transfer = (await frappe.db.get_value("Customer", frm.doc.customer, "custom_is_internal_transfer")).message.custom_is_internal_transfer;
             if(is_internal_transfer){
                 frm.set_value("write_off_amount",frm.doc.rounded_total)
