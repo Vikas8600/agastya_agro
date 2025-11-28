@@ -29,6 +29,12 @@ frappe.query_reports["Internal Stock Transfer"] = {
 					}
 				};
 			}
+		},
+		{
+			"fieldname": "item",
+			"label": __("Item"),
+			"fieldtype": "Link",
+			"options": "Item"
 		}
 	]
 };

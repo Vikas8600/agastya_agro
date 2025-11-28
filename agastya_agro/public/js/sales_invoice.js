@@ -94,6 +94,16 @@ frappe.ui.form.on('Sales Invoice', {
                 frm.set_value("write_off_cost_center",frm.doc.cost_center)
             }
         }
+    },
+    before_save: async function(frm){
+        if(frm.doc.customer && frm.is_new()){  
+            const is_internal_transfer = (await frappe.db.get_value("Customer", frm.doc.customer, "custom_is_internal_transfer")).message.custom_is_internal_transfer;
+            if(is_internal_transfer){
+                frm.set_value("write_off_amount",frm.doc.rounded_total)
+                frm.set_value("write_off_account","Stock Transfer Write Off - AAL")
+                frm.set_value("write_off_cost_center",frm.doc.cost_center)
+            }
+        }
     }
 });
 
