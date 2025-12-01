@@ -3,7 +3,7 @@ frappe.ui.form.on('Delivery Note', {
         const is_internal_transfer = (await frappe.db.get_value("Customer", frm.doc.customer, "custom_is_internal_transfer")).message.custom_is_internal_transfer;
         
         if (is_internal_transfer) {
-            frm.set_df_property("custom_to_depot_name", "reqd", 1);
+            // frm.set_df_property("custom_to_depot_name", "reqd", 1);
             
             if (frm.doc.docstatus === 1) {
                 frm.add_custom_button(__('Internal GRN'), async function() {
