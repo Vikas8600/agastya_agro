@@ -117,6 +117,9 @@ doc_events = {
 	},
 	"Delivery Note":{
 		"validate":"agastya_agro.agastya_agro.custom_delivery_notes.custom_validate"
+	},
+	"Purchase Invoice":{
+		"validate":"agastya_agro.public.py.purchase_invoice.validate"
 	}
 }
 # Scheduled Tasks
