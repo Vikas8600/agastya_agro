@@ -23,28 +23,28 @@ def get_columns():
 		# Delivery Note
 		{"label": _("Delivery Note"), "fieldname": "delivery_note", "fieldtype": "Link", "options": "Delivery Note", "width": 130},
 		{"label": _("DN Date"), "fieldname": "dn_date", "fieldtype": "Date", "width": 100},
-		{"label": _("DN Qty"), "fieldname": "dn_qty", "fieldtype": "Float", "width": 80},
 		{"label": _("DN Item"), "fieldname": "dn_item", "fieldtype": "Link", "options": "Item", "width": 120},
+		{"label": _("DN Qty"), "fieldname": "dn_qty", "fieldtype": "Float", "width": 80},
 
 		{"label": _("From Depot"), "fieldname": "from_depot", "fieldtype": "Data", "width": 120},
 		{"label": _("To Depot"), "fieldname": "to_depot", "fieldtype": "Data", "width": 120},
 		# Sales Invoice
 		{"label": _("Sales Invoice"), "fieldname": "sales_invoice", "fieldtype": "Link", "options": "Sales Invoice", "width": 130},
 		{"label": _("SI Date"), "fieldname": "si_date", "fieldtype": "Date", "width": 100},
-		{"label": _("SI Qty"), "fieldname": "si_qty", "fieldtype": "Float", "width": 80},
 		{"label": _("SI Item"), "fieldname": "si_item", "fieldtype": "Link", "options": "Item", "width": 120},
+		{"label": _("SI Qty"), "fieldname": "si_qty", "fieldtype": "Float", "width": 80},
 
 		# Purchase Receipt
 		{"label": _("Purchase Receipt"), "fieldname": "purchase_receipt", "fieldtype": "Link", "options": "Purchase Receipt", "width": 130},
 		{"label": _("PR Date"), "fieldname": "pr_date", "fieldtype": "Date", "width": 100},
-		{"label": _("PR Qty"), "fieldname": "pr_qty", "fieldtype": "Float", "width": 80},
 		{"label": _("PR Item"), "fieldname": "pr_item", "fieldtype": "Link", "options": "Item", "width": 120},
+		{"label": _("PR Qty"), "fieldname": "pr_qty", "fieldtype": "Float", "width": 80},
 
 		# Purchase Invoice (linked from PR)
 		{"label": _("Purchase Invoice"), "fieldname": "purchase_invoice", "fieldtype": "Link", "options": "Purchase Invoice", "width": 130},
 		{"label": _("PI Date"), "fieldname": "pi_date", "fieldtype": "Date", "width": 100},
-		{"label": _("PI Qty"), "fieldname": "pi_qty", "fieldtype": "Float", "width": 80},
 		{"label": _("PI Item"), "fieldname": "pi_item", "fieldtype": "Link", "options": "Item", "width": 120},
+		{"label": _("PI Qty"), "fieldname": "pi_qty", "fieldtype": "Float", "width": 80},
 
 		
 	]
