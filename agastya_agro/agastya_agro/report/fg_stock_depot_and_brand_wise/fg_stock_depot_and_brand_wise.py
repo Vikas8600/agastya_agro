@@ -71,7 +71,7 @@ def get_data(filters, depots, posting_date, company, selected_brand):
 
     for d in balance_data:
         key = (d['class'], d['brand'])
-        if not key[0]:
+        if not key[0] or not key[1]:
             continue
 
         qty = flt(d['balance_qty'])
