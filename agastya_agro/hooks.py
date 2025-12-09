@@ -113,7 +113,8 @@ doc_events = {
 		
 	},
 	"Sales Invoice":{
-		"validate":"agastya_agro.agastya_agro.custom_sales_invoice.custom_validate"
+		"validate":"agastya_agro.agastya_agro.custom_sales_invoice.custom_validate",
+		"before_insert":"agastya_agro.public.py.sales_invoice.before_insert"
 	},
 	"Delivery Note":{
 		"validate":"agastya_agro.agastya_agro.custom_delivery_notes.custom_validate"
