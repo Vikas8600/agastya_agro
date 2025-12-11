@@ -2,7 +2,7 @@
 # For license information, please see license.txt
 
 import frappe
-from frappe.utils import flt, getdate
+from frappe.utils import flt, getdate, date_diff
 
 def execute(filters=None):
 	columns = get_columns(filters)
@@ -12,7 +12,7 @@ def execute(filters=None):
 def get_columns(filters):
 	"""
 	Columns matching the client's format:
-	Sales Invoice | Date | Amount | Allocation Amount | Balance | Collection Amount | (gap) | Voucher No | Voucher Type | Date | Amount
+	Sales Invoice | Date | Amount | Allocation Amount | Balance | Collection Amount | (gap) | Voucher No | Voucher Type | Date | Amount | Opening Credit Balance
 	"""
 	columns = [
 		{'label': 'Customer', 'fieldname': 'customer', 'fieldtype': 'Link', 'options': 'Customer', 'width': 100},
@@ -21,13 +21,15 @@ def get_columns(filters):
 		{'label': 'Date', 'fieldname': 'invoice_date', 'fieldtype': 'Date', 'width': 100},
 		{'label': 'Amount', 'fieldname': 'invoice_amount', 'fieldtype': 'Currency', 'width': 120},
 		{'label': 'Allocation Amount', 'fieldname': 'allocation_amount', 'fieldtype': 'Currency', 'width': 130},
-		{'label': 'Balance', 'fieldname': 'balance', 'fieldtype': 'Currency', 'width': 120},
+		{'label': 'Invoice Balance', 'fieldname': 'balance', 'fieldtype': 'Currency', 'width': 120},
+		{'label': 'Opening Credit Balance', 'fieldname': 'opening_credit_balance', 'fieldtype': 'Currency', 'width': 150},
 		{'label': 'Collection Amount', 'fieldname': 'collection_amount', 'fieldtype': 'Currency', 'width': 130},
-		{'label': '', 'fieldname': 'blank', 'fieldtype': 'Data', 'width': 30},
+		# {'label': '', 'fieldname': 'blank', 'fieldtype': 'Data', 'width': 30},
 		{'label': 'Voucher No', 'fieldname': 'voucher_no', 'fieldtype': 'Dynamic Link', 'options': 'voucher_type', 'width': 150},
 		{'label': 'Voucher Type', 'fieldname': 'voucher_type', 'fieldtype': 'Data', 'width': 120},
 		{'label': 'Voucher Date', 'fieldname': 'voucher_date', 'fieldtype': 'Date', 'width': 100},
 		{'label': 'Voucher Amount', 'fieldname': 'voucher_amount', 'fieldtype': 'Currency', 'width': 120},
+		{'label': 'Days', 'fieldname': 'days', 'fieldtype': 'Int', 'width': 80},
 	]
 	return columns
 
@@ -199,6 +201,7 @@ def allocate_fifo(customer, customer_name, opening_balance, invoices, payments, 
 
 	# Track available credit from opening balance (if negative)
 	available_credit = abs(opening_balance) if opening_balance < 0 else 0
+	original_opening_credit = available_credit  # Store original for reference
 
 	# =========================================================================
 	# Handle Positive Opening Balance (Customer owes money from before)
@@ -219,6 +222,9 @@ def allocate_fifo(customer, customer_name, opening_balance, invoices, payments, 
 			opening_remaining = flt(opening_remaining - allocation)
 			pmt['remaining'] = flt(pmt['remaining'] - allocation)
 
+			# Calculate days: voucher_date - invoice_date
+			days = date_diff(pmt['date'], f_date) if f_date and pmt['date'] else None
+
 			# Add row
 			row = {
 				'customer': customer,
@@ -234,6 +240,8 @@ def allocate_fifo(customer, customer_name, opening_balance, invoices, payments, 
 				'voucher_type': pmt['voucher_type'],
 				'voucher_date': pmt['date'],
 				'voucher_amount': pmt['amount'],
+				'opening_credit_balance': None,  # Not applicable for positive opening balance
+				'days': days,
 			}
 			data.append(row)
 			first_opening_row = False
@@ -258,6 +266,8 @@ def allocate_fifo(customer, customer_name, opening_balance, invoices, payments, 
 				'voucher_type': '',
 				'voucher_date': None,
 				'voucher_amount': 0,
+				'opening_credit_balance': None,  # Not applicable for positive opening balance
+				'days': None,
 			}
 			data.append(row)
 
@@ -274,6 +284,9 @@ def allocate_fifo(customer, customer_name, opening_balance, invoices, payments, 
 			inv_remaining = flt(inv_remaining - allocation)
 			available_credit = flt(available_credit - allocation)
 
+			# Calculate days: voucher_date (f_date for opening credit) - invoice_date
+			days = date_diff(f_date, inv['date']) if f_date and inv['date'] else None
+
 			row = {
 				'customer': customer,
 				'customer_name': customer_name,
@@ -282,12 +295,14 @@ def allocate_fifo(customer, customer_name, opening_balance, invoices, payments, 
 				'invoice_amount': inv['amount'],
 				'allocation_amount': allocation,
 				'balance': inv_remaining,
-				'collection_amount': abs(opening_balance),  # Show original credit balance
+				'collection_amount': original_opening_credit,  # Show original credit balance
 				'blank': '',
 				'voucher_no': 'Opening Credit',
 				'voucher_type': 'Opening Balance',
 				'voucher_date': f_date,
-				'voucher_amount': abs(opening_balance),
+				'voucher_amount': original_opening_credit,
+				'opening_credit_balance': available_credit,  # Show remaining opening credit after this allocation
+				'days': days,
 			}
 			data.append(row)
 			first_invoice_row = False
@@ -315,6 +330,9 @@ def allocate_fifo(customer, customer_name, opening_balance, invoices, payments, 
 			else:
 				balance_to_show = 0
 
+			# Calculate days: voucher_date - invoice_date
+			days = date_diff(pmt['date'], inv['date']) if pmt['date'] and inv['date'] else None
+
 			# Add row
 			row = {
 				'customer': customer,
@@ -330,6 +348,8 @@ def allocate_fifo(customer, customer_name, opening_balance, invoices, payments, 
 				'voucher_type': pmt['voucher_type'],
 				'voucher_date': pmt['date'],
 				'voucher_amount': pmt['amount'],
+				'opening_credit_balance': available_credit if original_opening_credit > 0 else None,  # Show remaining opening credit
+				'days': days,
 			}
 			data.append(row)
 			first_invoice_row = False
@@ -354,6 +374,8 @@ def allocate_fifo(customer, customer_name, opening_balance, invoices, payments, 
 				'voucher_type': '',
 				'voucher_date': None,
 				'voucher_amount': 0,
+				'opening_credit_balance': available_credit if original_opening_credit > 0 else None,  # Show remaining opening credit
+				'days': None,
 			}
 			data.append(row)
 
@@ -376,6 +398,8 @@ def allocate_fifo(customer, customer_name, opening_balance, invoices, payments, 
 				'voucher_type': pmt['voucher_type'],
 				'voucher_date': pmt['date'],
 				'voucher_amount': pmt['amount'],
+				'opening_credit_balance': available_credit if original_opening_credit > 0 else None,  # Show remaining opening credit
+				'days': None,
 			}
 			data.append(row)
 
