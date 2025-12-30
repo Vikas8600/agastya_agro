@@ -55,17 +55,94 @@ def _execute(filters=None, additional_table_columns=None, additional_query_colum
 		if not delivery_note and d.update_stock:
 			delivery_note = d.parent
 
+		# Calculate fiscal year (April to March)
+		posting_date = d.posting_date
+		fiscal_year = ""
+		month = ""
+		posting_year = ""
+		if posting_date:
+			year = posting_date.year
+			month_num = posting_date.month
+			month = posting_date.strftime("%B")  # Full month name
+			posting_year = str(year)
+			if month_num >= 4:  # April onwards
+				fiscal_year = f"{str(year)[-2:]}-{str(year + 1)[-2:]}"
+			else:  # Jan to March
+				fiscal_year = f"{str(year - 1)[-2:]}-{str(year)[-2:]}"
+
+		# Get return invoice date
+		return_inv_date = None
+		return_against = d.return_against
+		if return_against:
+			return_inv_date = frappe.db.get_value("Sales Invoice", return_against, "posting_date")
+
+		# Get batch details
+		mfg_date = None
+		exp_date = None
+		old_batch_no = None
+		if d.batch_no:
+			batch_details = frappe.db.get_value("Batch", d.batch_no,
+				["manufacturing_date", "expiry_date", "old_batch_no"], as_dict=True)
+			if batch_details:
+				mfg_date = batch_details.get("manufacturing_date")
+				exp_date = batch_details.get("expiry_date")
+				old_batch_no = batch_details.get("old_batch_no")
+
+		# Get item details
+		item_values = frappe.get_value("Item", d.item_code,
+			["weight_per_unit", "brand", "class"], as_dict=True) or {}
+		weight_per_unit = item_values.get("weight_per_unit") or 0
+		brand = item_values.get("brand") or ""
+		item_class = item_values.get("class") or ""
+
+		# Get conversion factor for cases
+		conv_factor = frappe.get_value(
+			"UOM Conversion Detail",
+			{'parent': d.item_code, 'is_alternate_uom': 1},
+			'conversion_factor'
+		)
+		cases = (flt(d.stock_qty) / flt(conv_factor)) if conv_factor else 0
+		weight = flt(d.stock_qty) * flt(weight_per_unit)
+
+		# Calculate distributed discount amount (proportional share of invoice discount)
+		distributed_discount = 0
+		if d.invoice_discount_amount and d.base_net_total:
+			distributed_discount = (flt(d.base_net_amount) / flt(d.base_net_total)) * flt(d.invoice_discount_amount)
+
 		row = {
+			'year': fiscal_year,
+			'customer': d.customer,
+			'customer_name': customer_record.customer_name if customer_record else d.customer_name,
+			'customer_group': customer_record.customer_group if customer_record else d.customer_group,
+			'territory': d.territory,
+			'sales_order': d.sales_order,
+			'delivery_note': delivery_note,
+			'posting_date': d.posting_date,
+			'invoice': d.parent,
+			'month': month,
+			'posting_year': posting_year,
+			'return_invoice': return_against,
+			'return_inv_date': return_inv_date,
+			'price_list_name': d.selling_price_list,
 			'item_code': d.item_code,
 			'item_name': item_record.item_name if item_record else d.item_name,
+			'brand': brand,
+			'item_class': item_class,
 			'item_group': item_record.item_group if item_record else d.item_group,
-			'batch_no':d.batch_no,
-			'description': d.description,
-			'invoice': d.parent,
-			'posting_date': d.posting_date,
-			'customer': d.customer,
-			'customer_name': customer_record.customer_name,
-			'customer_group': customer_record.customer_group,
+			'mfg_date': mfg_date,
+			'exp_date': exp_date,
+			'batch_no': d.batch_no,
+			'old_batch_no': old_batch_no,
+			'stock_qty': d.stock_qty,
+			'weight': weight,
+			'cases': cases,
+			'price_list_rate': d.price_list_rate,
+			'discount_percentage': d.discount_percentage,
+			'discount_amount': d.item_discount_amount,
+			'distributed_discount_amount': distributed_discount,
+			'additional_discount_percentage': d.additional_discount_percentage,
+			'additional_discount_amount': d.invoice_discount_amount,
+			'net_rate': d.item_net_rate,
 		}
 
 		if additional_query_columns:
@@ -73,24 +150,6 @@ def _execute(filters=None, additional_table_columns=None, additional_query_colum
 				row.update({
 					col: d.get(col)
 				})
-
-		row.update({
-			'debit_to': d.debit_to,
-			'mode_of_payment': ", ".join(mode_of_payments.get(d.parent, [])),
-			'territory': d.territory,
-			'project': d.project,
-			'company': d.company,
-			'sales_order': d.sales_order,
-			'delivery_note': d.delivery_note,
-			'income_account': d.unrealized_profit_loss_account if d.is_internal_customer == 1 else d.income_account,
-			'cost_center': d.cost_center,
-			'stock_qty': d.stock_qty,
-			'stock_uom': d.stock_uom,
-			'alternate_qty' : flt(d.stock_qty) / flt(frappe.get_value("UOM Conversion Detail", {'parent': d.item_code ,'is_alternate_uom': 1 }, 'conversion_factor')) if frappe.get_value("UOM Conversion Detail", {'parent': d.item_code ,'is_alternate_uom': 1 }, 'conversion_factor') else 0,
-			'alternate_uom' : frappe.get_value("UOM Conversion Detail", {'parent': d.item_code ,'is_alternate_uom': 1 }, 'uom'),
-			'weight' : flt(d.stock_qty) * flt(frappe.db.get_value("Item", d.item_code, "weight_per_unit")),
-			'weight_uom' : frappe.db.get_value("Item", d.item_code, "weight_uom")
-		})
 
 		if d.stock_uom != d.uom and d.stock_qty:
 			row.update({
@@ -135,36 +194,64 @@ def _execute(filters=None, additional_table_columns=None, additional_query_colum
 		add_sub_total_row(total_row, total_row_map, 'total_row', tax_columns)
 		data.append(total_row_map.get('total_row'))
 		skip_total_row = 1
-	columns.extend([
+
+	# Add city and sales person data to rows
+	for d in data:
+		if d.get("customer"):
+			d["city"] = frappe.db.get_value("Customer", d["customer"], "city") or ""
+
+			sales_persons = frappe.db.get_all("Sales Team",
+											filters={"parent": d["customer"]},
+											fields=["sales_person", "parent_sales_person"])
+			if sales_persons:
+				d["sales_person"] = ", ".join([sp.get("sales_person") or "" for sp in sales_persons if sp.get("sales_person")])
+				d["parent_sales_person"] = ", ".join([sp.get("parent_sales_person") or "" for sp in sales_persons if sp.get("parent_sales_person")])
+			else:
+				d["sales_person"] = ""
+				d["parent_sales_person"] = ""
+
+	return columns, data, None, None, None, skip_total_row
+
+def get_columns(additional_table_columns, filters):
+	columns = [
 		{
-			'label': _('Item Weight'),
-			'fieldname': 'item_weight',
-			'fieldtype': 'Float',
-			'width': 120
-		},
-		{
-			'label': _('Brand'),
-			'fieldname': 'brand',
+			'label': _('Year'),
+			'fieldname': 'year',
 			'fieldtype': 'Data',
+			'width': 80
+		},
+		{
+			'label': _('Customer Code'),
+			'fieldname': 'customer',
+			'fieldtype': 'Link',
+			'options': 'Customer',
 			'width': 120
 		},
 		{
-			'label': _('No Of Cases'),
-			'fieldname': 'cases',
-			'fieldtype': 'Float',
-			'width': 120
-		},
-		{
-			'label': _('Class'),
-			'fieldname': 'item_class',
+			'label': _('Customer Name'),
+			'fieldname': 'customer_name',
 			'fieldtype': 'Data',
-			'width': 120
+			'width': 150
 		},
 		{
 			'label': _('City'),
 			'fieldname': 'city',
 			'fieldtype': 'Data',
+			'width': 100
+		},
+		{
+			'label': _('Cust Group'),
+			'fieldname': 'customer_group',
+			'fieldtype': 'Link',
+			'options': 'Customer Group',
 			'width': 120
+		},
+		{
+			'label': _('Territory'),
+			'fieldname': 'territory',
+			'fieldtype': 'Link',
+			'options': 'Territory',
+			'width': 100
 		},
 		{
 			'label': _('Sales Person'),
@@ -179,239 +266,125 @@ def _execute(filters=None, additional_table_columns=None, additional_query_colum
 			'width': 120
 		},
 		{
-			'label': _('Return Against Invoice'),
-			'fieldname': 'return_invoice',
-			'fieldtype': 'Data',
+			'label': _('Sale Order'),
+			'fieldname': 'sales_order',
+			'fieldtype': 'Link',
+			'options': 'Sales Order',
 			'width': 120
 		},
-
-		])
-	for d in data:
-		if d.get("item_code") and frappe.db.exists("Item", d.get("item_code")):
-			values_dict = frappe.get_value("Item", d.get("item_code"), ["weight_per_unit", "brand", "class"], as_dict=1)
-			if values_dict:
-				item_weight = values_dict.get("weight_per_unit") or 0
-				brand = values_dict.get("brand") or ""
-				item_class = values_dict.get("class") or ""
-
-				conv_factor = frappe.get_value(
-					"UOM Conversion Detail",
-					{'parent': d.get("item_code"), 'is_alternate_uom': 1},
-					'conversion_factor'
-				)
-
-				d["item_weight"] = flt(d.get("stock_qty")) * flt(item_weight)
-				d["brand"] = brand
-				d["cases"] = (flt(d.get("stock_qty")) / flt(conv_factor)) if conv_factor else 0
-				d["item_class"] = item_class
-
-		if d.get("customer"):
-			d["city"] = frappe.db.get_value("Customer", d["customer"], "city") or ""
-
-			sales_persons = frappe.db.get_all("Sales Team",
-											filters={"parent": d["customer"]},
-											fields=["sales_person", "parent_sales_person"])
-			if sales_persons:
-				d["sales_person"] = ", ".join([sp.get("sales_person") or "" for sp in sales_persons if sp.get("sales_person")])
-				d["parent_sales_person"] = ", ".join([sp.get("parent_sales_person") or "" for sp in sales_persons if sp.get("parent_sales_person")])
-			else:
-				d["sales_person"] = ""
-				d["parent_sales_person"] = ""
-		if d.get("invoice"):
-			d["return_invoice"] = frappe.db.get_value("Sales Invoice",d["invoice"],"return_against") or ""
-
-
-			# frappe.throw(f"{d} {item_weight} {brand} {item_class}")
-	return columns, data, None, None, None, skip_total_row
-
-def get_columns(additional_table_columns, filters):
-	columns = []
-
-	if filters.get('group_by') != ('Item'):
-		columns.extend(
-			[
-				{
-					'label': _('Item Code'),
-					'fieldname': 'item_code',
-					'fieldtype': 'Link',
-					'options': 'Item',
-					'width': 120
-				},
-				{
-					'label': _('Item Name'),
-					'fieldname': 'item_name',
-					'fieldtype': 'Data',
-					'width': 120
-				}
-			]
-		)
-
-	if filters.get('group_by') not in ('Item', 'Item Group'):
-		columns.extend([
-			{
-				'label': _('Item Group'),
-				'fieldname': 'item_group',
-				'fieldtype': 'Link',
-				'options': 'Item Group',
-				'width': 120
-			}
-		])
-
-	columns.extend([
 		{
-			'label': _('Description'),
-			'fieldname': 'description',
-			'fieldtype': 'Data',
-			'width': 150
-		},
-		{
-			'label': _('Invoice'),
-			'fieldname': 'invoice',
+			'label': _('Delivery Challan'),
+			'fieldname': 'delivery_note',
 			'fieldtype': 'Link',
-			'options': 'Sales Invoice',
+			'options': 'Delivery Note',
 			'width': 120
 		},
 		{
 			'label': _('Posting Date'),
 			'fieldname': 'posting_date',
 			'fieldtype': 'Date',
-			'width': 120
-		}
-	])
-
-	if filters.get('group_by') != 'Customer':
-		columns.extend([
-			{
-				'label': _('Customer Group'),
-				'fieldname': 'customer_group',
-				'fieldtype': 'Link',
-				'options': 'Customer Group',
-				'width': 120
-			}
-		])
-
-	if filters.get('group_by') not in ('Customer', 'Customer Group'):
-		columns.extend([
-			{
-				'label': _('Customer'),
-				'fieldname': 'customer',
-				'fieldtype': 'Link',
-				'options': 'Customer',
-				'width': 120
-			},
-			{
-				'label': _('Customer Name'),
-				'fieldname': 'customer_name',
-				'fieldtype': 'Data',
-				'width': 120
-			}
-		])
-
-	if additional_table_columns:
-		columns += additional_table_columns
-
-	columns += [
+			'width': 100
+		},
 		{
-			'label': _('Receivable Account'),
-			'fieldname': 'debit_to',
+			'label': _('Invoice Number'),
+			'fieldname': 'invoice',
 			'fieldtype': 'Link',
-			'options': 'Account',
+			'options': 'Sales Invoice',
+			'width': 120
+		},
+		{
+			'label': _('Month'),
+			'fieldname': 'month',
+			'fieldtype': 'Data',
 			'width': 80
 		},
 		{
-			'label': _('Mode Of Payment'),
-			'fieldname': 'mode_of_payment',
+			'label': _('Posting Year'),
+			'fieldname': 'posting_year',
 			'fieldtype': 'Data',
-			'width': 120
-		}
-	]
-
-	if filters.get('group_by') != 'Territory':
-		columns.extend([
-			{
-				'label': _('Territory'),
-				'fieldname': 'territory',
-				'fieldtype': 'Link',
-				'options': 'Territory',
-				'width': 80
-			}
-		])
-
-
-	columns += [
+			'width': 80
+		},
 		{
-			'label': _('Batch No.'),
+			'label': _('Return Against Invoice'),
+			'fieldname': 'return_invoice',
+			'fieldtype': 'Link',
+			'options': 'Sales Invoice',
+			'width': 140
+		},
+		{
+			'label': _('Return Inv Date'),
+			'fieldname': 'return_inv_date',
+			'fieldtype': 'Date',
+			'width': 100
+		},
+		{
+			'label': _('Price List Name'),
+			'fieldname': 'price_list_name',
+			'fieldtype': 'Link',
+			'options': 'Price List',
+			'width': 120
+		},
+		{
+			'label': _('Item Code'),
+			'fieldname': 'item_code',
+			'fieldtype': 'Link',
+			'options': 'Item',
+			'width': 120
+		},
+		{
+			'label': _('Item Name'),
+			'fieldname': 'item_name',
+			'fieldtype': 'Data',
+			'width': 150
+		},
+		{
+			'label': _('Brand'),
+			'fieldname': 'brand',
+			'fieldtype': 'Data',
+			'width': 100
+		},
+		{
+			'label': _('Class'),
+			'fieldname': 'item_class',
+			'fieldtype': 'Data',
+			'width': 100
+		},
+		{
+			'label': _('Item Group'),
+			'fieldname': 'item_group',
+			'fieldtype': 'Link',
+			'options': 'Item Group',
+			'width': 120
+		},
+		{
+			'label': _('MFG Date'),
+			'fieldname': 'mfg_date',
+			'fieldtype': 'Date',
+			'width': 100
+		},
+		{
+			'label': _('Exp Date'),
+			'fieldname': 'exp_date',
+			'fieldtype': 'Date',
+			'width': 100
+		},
+		{
+			'label': _('Batch No'),
 			'fieldname': 'batch_no',
 			'fieldtype': 'Link',
 			'options': 'Batch',
-			'width': 100
+			'width': 120
 		},
 		{
-			'label': _('Project'),
-			'fieldname': 'project',
-			'fieldtype': 'Link',
-			'options': 'Project',
-			'width': 80
-		},
-		{
-			'label': _('Company'),
-			'fieldname': 'company',
-			'fieldtype': 'Link',
-			'options': 'Company',
-			'width': 80
-		},
-		{
-			'label': _('Sales Order'),
-			'fieldname': 'sales_order',
-			'fieldtype': 'Link',
-			'options': 'Sales Order',
-			'width': 100
-		},
-		{
-			'label': _("Delivery Note"),
-			'fieldname': 'delivery_note',
-			'fieldtype': 'Link',
-			'options': 'Delivery Note',
-			'width': 100
-		},
-		{
-			'label': _('Income Account'),
-			'fieldname': 'income_account',
-			'fieldtype': 'Link',
-			'options': 'Account',
-			'width': 100
-		},
-		{
-			'label': _("Cost Center"),
-			'fieldname': 'cost_center',
-			'fieldtype': 'Link',
-			'options': 'Cost Center',
-			'width': 100
+			'label': _('Old Batch No'),
+			'fieldname': 'old_batch_no',
+			'fieldtype': 'Data',
+			'width': 120
 		},
 		{
 			'label': _('Stock Qty'),
 			'fieldname': 'stock_qty',
 			'fieldtype': 'Float',
-			'width': 100
-		},
-		{
-			'label': _('Stock UOM'),
-			'fieldname': 'stock_uom',
-			'fieldtype': 'Link',
-			'options': 'UOM',
-			'width': 100
-		},
-		{
-			'label': _('Alternate Qty'),
-			'fieldname': 'alternate_qty',
-			'fieldtype': 'Float',
-			'width': 100
-		},
-		{
-			'label': _('Alternate UOM'),
-			'fieldname': 'alternate_uom',
-			'fieldtype': 'Link',
-			'options': 'UOM',
 			'width': 100
 		},
 		{
@@ -421,16 +394,62 @@ def get_columns(additional_table_columns, filters):
 			'width': 100
 		},
 		{
-			'label': _('Weight UOM'),
-			'fieldname': 'weight_uom',
-			'fieldtype': 'Link',
-			'options': 'UOM',
+			'label': _('Cases'),
+			'fieldname': 'cases',
+			'fieldtype': 'Float',
 			'width': 100
+		},
+		{
+			'label': _('Price List Rate'),
+			'fieldname': 'price_list_rate',
+			'fieldtype': 'Currency',
+			'options': 'currency',
+			'width': 120
+		},
+		{
+			'label': _('Discount (%) on Price List Rate with Margin'),
+			'fieldname': 'discount_percentage',
+			'fieldtype': 'Float',
+			'width': 150
+		},
+		{
+			'label': _('Discount Amount'),
+			'fieldname': 'discount_amount',
+			'fieldtype': 'Currency',
+			'options': 'currency',
+			'width': 120
+		},
+		{
+			'label': _('Distributed Discount Amount'),
+			'fieldname': 'distributed_discount_amount',
+			'fieldtype': 'Currency',
+			'options': 'currency',
+			'width': 150
+		},
+		{
+			'label': _('Additional Discount Percentage'),
+			'fieldname': 'additional_discount_percentage',
+			'fieldtype': 'Float',
+			'width': 150
+		},
+		{
+			'label': _('Additional Discount Amount INR'),
+			'fieldname': 'additional_discount_amount',
+			'fieldtype': 'Currency',
+			'options': 'currency',
+			'width': 150
 		},
 		{
 			'label': _('Rate'),
 			'fieldname': 'rate',
-			'fieldtype': 'Float',
+			'fieldtype': 'Currency',
+			'options': 'currency',
+			'width': 100
+		},
+		{
+			'label': _('Net Rate'),
+			'fieldname': 'net_rate',
+			'fieldtype': 'Currency',
 			'options': 'currency',
 			'width': 100
 		},
@@ -442,6 +461,9 @@ def get_columns(additional_table_columns, filters):
 			'width': 100
 		}
 	]
+
+	if additional_table_columns:
+		columns += additional_table_columns
 
 	if filters.get('group_by'):
 		columns.append({
@@ -512,14 +534,25 @@ def get_items(filters, additional_query_columns):
 			`tabSales Invoice`.is_internal_customer,
 			`tabSales Invoice`.project, `tabSales Invoice`.customer, `tabSales Invoice`.remarks,
 			`tabSales Invoice`.territory, `tabSales Invoice`.company, `tabSales Invoice`.base_net_total,
-			`tabSales Invoice Item`.item_code, `tabSales Invoice Item`.description,
+			`tabSales Invoice Item`.item_code,
 			`tabSales Invoice Item`.`item_name`, `tabSales Invoice Item`.`item_group`,`tabSales Invoice Item`.`batch_no`,
 			`tabSales Invoice Item`.sales_order, `tabSales Invoice Item`.delivery_note,
 			`tabSales Invoice Item`.income_account, `tabSales Invoice Item`.cost_center,
 			`tabSales Invoice Item`.stock_qty, `tabSales Invoice Item`.stock_uom,
 			`tabSales Invoice Item`.base_net_rate, `tabSales Invoice Item`.base_net_amount,
 			`tabSales Invoice`.customer_name, `tabSales Invoice`.customer_group, `tabSales Invoice Item`.so_detail,
-			`tabSales Invoice`.update_stock, `tabSales Invoice Item`.uom, `tabSales Invoice Item`.qty {0}
+			`tabSales Invoice`.update_stock, `tabSales Invoice Item`.uom, `tabSales Invoice Item`.qty,
+			`tabSales Invoice`.selling_price_list,
+			`tabSales Invoice`.return_against,
+			`tabSales Invoice`.additional_discount_percentage,
+			`tabSales Invoice`.discount_amount as invoice_discount_amount,
+			`tabSales Invoice Item`.price_list_rate,
+			`tabSales Invoice Item`.discount_percentage,
+			`tabSales Invoice Item`.discount_amount as item_discount_amount,
+			`tabSales Invoice Item`.rate as item_rate,
+			`tabSales Invoice Item`.net_rate as item_net_rate,
+			`tabSales Invoice Item`.base_rate,
+			`tabSales Invoice Item`.base_amount {0}
 		from `tabSales Invoice`, `tabSales Invoice Item`
 		where `tabSales Invoice`.name = `tabSales Invoice Item`.parent
 			and `tabSales Invoice`.docstatus = 1 {1}

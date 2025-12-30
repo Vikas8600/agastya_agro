@@ -16,8 +16,6 @@ def get_columns(filters):
 		{"label": "Brand", "fieldname": "brand", "fieldtype": "Data", "width": 150},
 		{"label": "Class", "fieldname": "class", "fieldtype": "Data", "width": 150},
 		{"label": "Warehouse", "fieldname": "warehouse", "fieldtype": "Link", "options": "Warehouse", "width": 150},
-		{"label": "Weight Per Unit", "fieldname": "wt_per_unit", "fieldtype": "Float", "width": 120},
-		{"label": "Case Per Unit", "fieldname": "case_per_unit", "fieldtype": "Float", "width": 120},
 		{"label": "Manufacturing Date", "fieldname": "mfg_date", "fieldtype": "Date", "width": 120},
 		{"label": "Expiry Date", "fieldname": "expiry_date", "fieldtype": "Date", "width": 120},
 		{"label": "Batch No", "fieldname": "batch_no", "fieldtype": "Link", "options": "Batch", "width": 120},
