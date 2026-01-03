@@ -107,8 +107,9 @@ def get_opening_balance(customer, company, f_date):
 
 def get_invoices(customer, company, f_date, t_date):
 	"""
-	Get all Sales Invoices (debit entries) for the customer
-	Returns list of invoices sorted by date (FIFO)
+	Get all debit entries for the customer (increases receivable)
+	Includes: Sales Invoice, Journal Entry (debit entries)
+	Returns list sorted by date (FIFO)
 	"""
 	conditions = """
 		WHERE gl.party_type = 'Customer'
@@ -116,7 +117,7 @@ def get_invoices(customer, company, f_date, t_date):
 		AND gl.company = %s
 		AND gl.debit > 0
 		AND gl.is_cancelled = 0
-		AND gl.voucher_type = 'Sales Invoice'
+		AND gl.voucher_type IN ('Sales Invoice', 'Journal Entry')
 	"""
 	params = [customer, company]
 
@@ -174,17 +175,11 @@ def get_payments(customer, company, f_date, t_date):
 		ORDER BY gl.posting_date ASC, gl.voucher_no ASC
 	""".format(conditions=conditions), params, as_dict=True)
 
-	# Filter out system-generated Journal Entries
-	filtered_payments = []
+	# Add remaining balance to each payment
 	for pmt in payments:
-		if pmt['voucher_type'] == 'Journal Entry':
-			is_system_generated = frappe.get_cached_value("Journal Entry", pmt['name'], "is_system_generated")
-			if is_system_generated:
-				continue
 		pmt['remaining'] = flt(pmt['amount'])
-		filtered_payments.append(pmt)
 
-	return filtered_payments
+	return payments
 
 
 def allocate_fifo(customer, customer_name, opening_balance, invoices, payments, f_date):
