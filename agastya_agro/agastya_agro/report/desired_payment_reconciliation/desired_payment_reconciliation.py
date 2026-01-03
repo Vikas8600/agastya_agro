@@ -18,15 +18,15 @@ def get_columns(filters):
 		{'label': 'Customer Name', 'fieldname': 'customer_name', 'fieldtype': 'Data', 'width': 150},
 		{'label': 'Sales Invoice', 'fieldname': 'sales_invoice', 'fieldtype': 'Link', 'options': 'Sales Invoice', 'width': 140},
 		{'label': 'Invoice Date', 'fieldname': 'invoice_date', 'fieldtype': 'Date', 'width': 100},
-		# {'label': 'Amount', 'fieldname': 'invoice_amount', 'fieldtype': 'Currency', 'width': 120},  # Redundant - same as Debit for invoices
+		{'label': 'Invoice Amount', 'fieldname': 'invoice_amount', 'fieldtype': 'Currency', 'width': 120},
 		{'label': 'Allocation Amount', 'fieldname': 'allocation_amount', 'fieldtype': 'Currency', 'width': 130},
 		{'label': 'Invoice Balance', 'fieldname': 'balance', 'fieldtype': 'Currency', 'width': 120},
 		# {'label': 'Opening Credit Balance', 'fieldname': 'opening_credit_balance', 'fieldtype': 'Currency', 'width': 150},
-		# {'label': 'Collection Amount', 'fieldname': 'collection_amount', 'fieldtype': 'Currency', 'width': 130},  # Redundant - same as Credit for payments
+		{'label': 'Collection Amount', 'fieldname': 'collection_amount', 'fieldtype': 'Currency', 'width': 130},
 		{'label': 'Voucher No', 'fieldname': 'voucher_no', 'fieldtype': 'Dynamic Link', 'options': 'voucher_type', 'width': 150},
 		{'label': 'Voucher Type', 'fieldname': 'voucher_type', 'fieldtype': 'Data', 'width': 120},
 		{'label': 'Voucher Date', 'fieldname': 'voucher_date', 'fieldtype': 'Date', 'width': 100},
-		# {'label': 'Voucher Amount', 'fieldname': 'voucher_amount', 'fieldtype': 'Currency', 'width': 120},  # Redundant - same as Credit for payments
+		# {'label': 'Voucher Amount', 'fieldname': 'voucher_amount', 'fieldtype': 'Currency', 'width': 120},  # Same as Collection Amount
 		{'label': 'Debit', 'fieldname': 'debit', 'fieldtype': 'Currency', 'width': 120},
 		{'label': 'Credit', 'fieldname': 'credit', 'fieldtype': 'Currency', 'width': 120},
 		{'label': 'Running Balance', 'fieldname': 'running_balance', 'fieldtype': 'Currency', 'width': 130},
@@ -55,14 +55,14 @@ def get_data(filters):
 	# Get opening balance
 	opening_balance = get_opening_balance(customer, company, f_date)
 
-	# Get invoices (debit entries) sorted by date ASC
-	invoices = get_invoices(customer, company, f_date, t_date)
+	# Get all receivables (Sales Invoice + JV debits) sorted by date ASC
+	receivables = get_receivables(customer, company, f_date, t_date)
 
 	# Get all credit entries (payments, JV credits) sorted by date ASC
 	credits = get_credit_entries(customer, company, f_date, t_date)
 
-	# Build report - invoice by invoice with FIFO allocation
-	data = build_invoice_centric_report(customer, customer_name, opening_balance, invoices, credits, f_date)
+	# Build report - receivable by receivable with FIFO allocation
+	data = build_invoice_centric_report(customer, customer_name, opening_balance, receivables, credits, f_date)
 
 	return data
 
@@ -86,16 +86,17 @@ def get_opening_balance(customer, company, f_date):
 	return flt(result[0].opening) if result else 0
 
 
-def get_invoices(customer, company, f_date, t_date):
+def get_receivables(customer, company, f_date, t_date):
 	"""
-	Get all Sales Invoice debit entries sorted by date ASC
+	Get all debit entries (Sales Invoice + JV debits) sorted by date ASC
+	These are all receivables that need payment allocation
 	"""
 	conditions = """
 		WHERE gl.party_type = 'Customer'
 		AND gl.party = %s
 		AND gl.company = %s
 		AND gl.is_cancelled = 0
-		AND gl.voucher_type = 'Sales Invoice'
+		AND gl.voucher_type IN ('Sales Invoice', 'Journal Entry')
 		AND gl.debit > 0
 	"""
 	params = [customer, company]
@@ -104,7 +105,7 @@ def get_invoices(customer, company, f_date, t_date):
 		conditions += " AND gl.posting_date BETWEEN %s AND %s"
 		params.extend([f_date, t_date])
 
-	invoices = frappe.db.sql("""
+	receivables = frappe.db.sql("""
 		SELECT
 			gl.voucher_no as name,
 			gl.posting_date as date,
@@ -116,7 +117,7 @@ def get_invoices(customer, company, f_date, t_date):
 		ORDER BY gl.posting_date ASC, gl.creation ASC
 	""".format(conditions=conditions), params, as_dict=True)
 
-	return invoices
+	return receivables
 
 
 def get_credit_entries(customer, company, f_date, t_date):
@@ -152,19 +153,16 @@ def get_credit_entries(customer, company, f_date, t_date):
 	return credits
 
 
-def build_invoice_centric_report(customer, customer_name, opening_balance, invoices, credits, f_date):
+def build_invoice_centric_report(customer, customer_name, opening_balance, receivables, credits, f_date):
 	"""
 	Build report showing:
-	- Invoice 1 (oldest) with debit
-	  - Payment allocations against Invoice 1 (until cleared)
-	- Invoice 2 (next oldest) with debit
-	  - Payment allocations against Invoice 2
-	- ... and so on
+	1. Opening Balance first - allocate credits until cleared
+	2. Then Invoices/JV debits in date order - allocate remaining credits
 
 	Running balance is calculated as: Opening + Debits - Credits
 	"""
 	data = []
-	running_balance = opening_balance
+	running_balance = flt(opening_balance)
 
 	# Credit queue for FIFO allocation (oldest payment first)
 	credit_queue = []
@@ -179,8 +177,83 @@ def build_invoice_centric_report(customer, customer_name, opening_balance, invoi
 
 	credit_idx = 0  # Current credit for FIFO allocation
 
-	# Opening Balance Row
-	if opening_balance != 0:
+	# ===== STEP 1: Clear Opening Balance First =====
+	if opening_balance > 0:
+		opening_remaining = flt(opening_balance)
+
+		# First row - Opening Balance with first allocation
+		first_allocation_done = False
+
+		while opening_remaining > 0 and credit_idx < len(credit_queue):
+			credit = credit_queue[credit_idx]
+
+			if credit['remaining'] <= 0:
+				credit_idx += 1
+				continue
+
+			# Allocation amount
+			allocation = min(opening_remaining, credit['remaining'])
+			opening_remaining = flt(opening_remaining - allocation)
+			credit['remaining'] = flt(credit['remaining'] - allocation)
+
+			# Update running balance for credit
+			running_balance = flt(running_balance - allocation)
+
+			# Days from f_date to payment date
+			days = date_diff(credit['date'], f_date) if credit['date'] and f_date else None
+
+			# Add allocation row
+			row = {
+				'customer': customer,
+				'customer_name': customer_name,
+				'sales_invoice': 'Opening Balance' if not first_allocation_done else '',
+				'invoice_date': f_date if not first_allocation_done else None,
+				'invoice_amount': opening_balance if not first_allocation_done else None,
+				'allocation_amount': allocation,
+				'balance': opening_remaining,
+				'collection_amount': credit['amount'],
+				'voucher_no': credit['name'],
+				'voucher_type': credit['voucher_type'],
+				'voucher_date': credit['date'],
+				'voucher_amount': credit['amount'],
+				'debit': opening_balance if not first_allocation_done else None,
+				'credit': allocation,
+				'running_balance': running_balance,
+				'opening_credit_balance': None,
+				'days': days,
+			}
+			data.append(row)
+			first_allocation_done = True
+
+			# Move to next credit if fully used
+			if credit['remaining'] <= 0:
+				credit_idx += 1
+
+		# If opening balance not fully cleared (no more credits), show remaining
+		if opening_remaining > 0 and not first_allocation_done:
+			row = {
+				'customer': customer,
+				'customer_name': customer_name,
+				'sales_invoice': 'Opening Balance',
+				'invoice_date': f_date,
+				'invoice_amount': opening_balance,
+				'allocation_amount': None,
+				'balance': opening_remaining,
+				'collection_amount': None,
+				'voucher_no': '',
+				'voucher_type': 'Opening',
+				'voucher_date': f_date,
+				'voucher_amount': opening_balance,
+				'debit': opening_balance,
+				'credit': None,
+				'running_balance': running_balance,
+				'opening_credit_balance': None,
+				'days': None,
+			}
+			data.append(row)
+
+	elif opening_balance < 0:
+		# Negative opening balance (credit balance)
 		row = {
 			'customer': customer,
 			'customer_name': customer_name,
@@ -194,48 +267,34 @@ def build_invoice_centric_report(customer, customer_name, opening_balance, invoi
 			'voucher_type': 'Opening',
 			'voucher_date': f_date,
 			'voucher_amount': abs(opening_balance),
-			'debit': opening_balance if opening_balance > 0 else None,
-			'credit': abs(opening_balance) if opening_balance < 0 else None,
+			'debit': None,
+			'credit': abs(opening_balance),
 			'running_balance': running_balance,
 			'opening_credit_balance': None,
 			'days': None,
 		}
 		data.append(row)
 
-	# Process each invoice in date order
-	for invoice in invoices:
-		inv_name = invoice['name']
-		inv_date = invoice['date']
-		inv_amount = flt(invoice['amount'])
-		inv_remaining = inv_amount
+	# ===== STEP 2: Process Invoices/JV Debits in Date Order =====
+	for receivable in receivables:
+		rec_name = receivable['name']
+		rec_date = receivable['date']
+		rec_amount = flt(receivable['amount'])
+		rec_type = receivable['voucher_type']
+		rec_remaining = rec_amount
 
-		# Update running balance for invoice (debit)
-		running_balance = flt(running_balance + inv_amount)
+		# For Sales Invoice, show in sales_invoice column
+		# For JV debit, sales_invoice column is empty
+		is_sales_invoice = rec_type == 'Sales Invoice'
 
-		# Add invoice row
-		row = {
-			'customer': customer,
-			'customer_name': customer_name,
-			'sales_invoice': inv_name,
-			'invoice_date': inv_date,
-			'invoice_amount': inv_amount,
-			'allocation_amount': None,
-			'balance': inv_remaining,
-			'collection_amount': None,
-			'voucher_no': inv_name,
-			'voucher_type': 'Sales Invoice',
-			'voucher_date': inv_date,
-			'voucher_amount': inv_amount,
-			'debit': inv_amount,
-			'credit': None,
-			'running_balance': running_balance,
-			'opening_credit_balance': None,
-			'days': None,
-		}
-		data.append(row)
+		# Update running balance for receivable (debit)
+		running_balance = flt(running_balance + rec_amount)
 
-		# Allocate credits against this invoice until cleared
-		while inv_remaining > 0 and credit_idx < len(credit_queue):
+		# Track if first allocation row for this invoice
+		first_allocation_done = False
+
+		# Allocate credits against this receivable until cleared
+		while rec_remaining > 0 and credit_idx < len(credit_queue):
 			credit = credit_queue[credit_idx]
 
 			if credit['remaining'] <= 0:
@@ -243,41 +302,65 @@ def build_invoice_centric_report(customer, customer_name, opening_balance, invoi
 				continue
 
 			# Allocation amount
-			allocation = min(inv_remaining, credit['remaining'])
-			inv_remaining = flt(inv_remaining - allocation)
+			allocation = min(rec_remaining, credit['remaining'])
+			rec_remaining = flt(rec_remaining - allocation)
 			credit['remaining'] = flt(credit['remaining'] - allocation)
 
 			# Update running balance for credit
 			running_balance = flt(running_balance - allocation)
 
-			# Days between invoice and payment
-			days = date_diff(credit['date'], inv_date) if credit['date'] and inv_date else None
+			# Days between receivable and payment
+			days = date_diff(credit['date'], rec_date) if credit['date'] and rec_date else None
 
 			# Add allocation row
 			row = {
 				'customer': customer,
 				'customer_name': customer_name,
-				'sales_invoice': inv_name,
-				'invoice_date': inv_date,
-				'invoice_amount': None,
+				'sales_invoice': rec_name if is_sales_invoice and not first_allocation_done else '',
+				'invoice_date': rec_date if not first_allocation_done else None,
+				'invoice_amount': rec_amount if not first_allocation_done else None,
 				'allocation_amount': allocation,
-				'balance': inv_remaining,
+				'balance': rec_remaining,
 				'collection_amount': credit['amount'],
 				'voucher_no': credit['name'],
 				'voucher_type': credit['voucher_type'],
 				'voucher_date': credit['date'],
 				'voucher_amount': credit['amount'],
-				'debit': None,
+				'debit': rec_amount if not first_allocation_done else None,
 				'credit': allocation,
 				'running_balance': running_balance,
 				'opening_credit_balance': None,
 				'days': days,
 			}
 			data.append(row)
+			first_allocation_done = True
 
 			# Move to next credit if fully used
 			if credit['remaining'] <= 0:
 				credit_idx += 1
+
+		# If receivable not fully cleared (no more credits), show remaining balance
+		if rec_remaining > 0 and not first_allocation_done:
+			row = {
+				'customer': customer,
+				'customer_name': customer_name,
+				'sales_invoice': rec_name if is_sales_invoice else '',
+				'invoice_date': rec_date,
+				'invoice_amount': rec_amount,
+				'allocation_amount': 0,
+				'balance': rec_remaining,
+				'collection_amount': None,
+				'voucher_no': rec_name if not is_sales_invoice else '',
+				'voucher_type': rec_type,
+				'voucher_date': rec_date,
+				'voucher_amount': rec_amount,
+				'debit': rec_amount,
+				'credit': None,
+				'running_balance': running_balance,
+				'opening_credit_balance': None,
+				'days': None,
+			}
+			data.append(row)
 
 	# Handle any remaining unallocated credits
 	while credit_idx < len(credit_queue):
