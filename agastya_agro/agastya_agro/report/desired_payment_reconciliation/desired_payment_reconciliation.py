@@ -18,15 +18,15 @@ def get_columns(filters):
 		{'label': 'Customer Name', 'fieldname': 'customer_name', 'fieldtype': 'Data', 'width': 150},
 		{'label': 'Sales Invoice', 'fieldname': 'sales_invoice', 'fieldtype': 'Link', 'options': 'Sales Invoice', 'width': 140},
 		{'label': 'Date', 'fieldname': 'invoice_date', 'fieldtype': 'Date', 'width': 100},
-		{'label': 'Amount', 'fieldname': 'invoice_amount', 'fieldtype': 'Currency', 'width': 120},
+		# {'label': 'Amount', 'fieldname': 'invoice_amount', 'fieldtype': 'Currency', 'width': 120},  # Redundant - same as Debit for invoices
 		{'label': 'Allocation Amount', 'fieldname': 'allocation_amount', 'fieldtype': 'Currency', 'width': 130},
 		{'label': 'Invoice Balance', 'fieldname': 'balance', 'fieldtype': 'Currency', 'width': 120},
-		{'label': 'Opening Credit Balance', 'fieldname': 'opening_credit_balance', 'fieldtype': 'Currency', 'width': 150},
-		{'label': 'Collection Amount', 'fieldname': 'collection_amount', 'fieldtype': 'Currency', 'width': 130},
+		# {'label': 'Opening Credit Balance', 'fieldname': 'opening_credit_balance', 'fieldtype': 'Currency', 'width': 150},
+		# {'label': 'Collection Amount', 'fieldname': 'collection_amount', 'fieldtype': 'Currency', 'width': 130},  # Redundant - same as Credit for payments
 		{'label': 'Voucher No', 'fieldname': 'voucher_no', 'fieldtype': 'Dynamic Link', 'options': 'voucher_type', 'width': 150},
 		{'label': 'Voucher Type', 'fieldname': 'voucher_type', 'fieldtype': 'Data', 'width': 120},
 		{'label': 'Voucher Date', 'fieldname': 'voucher_date', 'fieldtype': 'Date', 'width': 100},
-		{'label': 'Voucher Amount', 'fieldname': 'voucher_amount', 'fieldtype': 'Currency', 'width': 120},
+		# {'label': 'Voucher Amount', 'fieldname': 'voucher_amount', 'fieldtype': 'Currency', 'width': 120},  # Redundant - same as Credit for payments
 		{'label': 'Debit', 'fieldname': 'debit', 'fieldtype': 'Currency', 'width': 120},
 		{'label': 'Credit', 'fieldname': 'credit', 'fieldtype': 'Currency', 'width': 120},
 		{'label': 'Running Balance', 'fieldname': 'running_balance', 'fieldtype': 'Currency', 'width': 130},
