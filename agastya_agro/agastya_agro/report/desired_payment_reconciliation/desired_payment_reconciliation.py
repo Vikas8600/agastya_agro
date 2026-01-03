@@ -113,7 +113,6 @@ def get_receivables(customer, company, f_date, t_date):
 			gl.voucher_type
 		FROM `tabGL Entry` gl
 		{conditions}
-		GROUP BY gl.voucher_no
 		ORDER BY gl.posting_date ASC, gl.creation ASC
 	""".format(conditions=conditions), params, as_dict=True)
 
@@ -146,7 +145,6 @@ def get_credit_entries(customer, company, f_date, t_date):
 			gl.voucher_type
 		FROM `tabGL Entry` gl
 		{conditions}
-		GROUP BY gl.voucher_no
 		ORDER BY gl.posting_date ASC, gl.creation ASC
 	""".format(conditions=conditions), params, as_dict=True)
 
