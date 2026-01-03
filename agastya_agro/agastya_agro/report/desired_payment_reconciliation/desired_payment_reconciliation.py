@@ -282,74 +282,29 @@ def build_invoice_centric_report(customer, customer_name, opening_balance, recei
 		rec_remaining = rec_amount
 
 		# For Sales Invoice, show in sales_invoice column
-		# For JV debit, sales_invoice column is empty
+		# For JV debit, sales_invoice column is empty, show in voucher_no
 		is_sales_invoice = rec_type == 'Sales Invoice'
 
 		# Update running balance for receivable (debit)
 		running_balance = flt(running_balance + rec_amount)
 
-		# Track if first allocation row for this invoice
+		# Track if first allocation row for this receivable
 		first_allocation_done = False
 
-		# Allocate credits against this receivable until cleared
-		while rec_remaining > 0 and credit_idx < len(credit_queue):
-			credit = credit_queue[credit_idx]
-
-			if credit['remaining'] <= 0:
-				credit_idx += 1
-				continue
-
-			# Allocation amount
-			allocation = min(rec_remaining, credit['remaining'])
-			rec_remaining = flt(rec_remaining - allocation)
-			credit['remaining'] = flt(credit['remaining'] - allocation)
-
-			# Update running balance for credit
-			running_balance = flt(running_balance - allocation)
-
-			# Days between receivable and payment
-			days = date_diff(credit['date'], rec_date) if credit['date'] and rec_date else None
-
-			# Add allocation row
+		# For JV debit: First show the debit row, then allocations
+		if not is_sales_invoice:
+			# JV Debit - Show debit row first with JV in Voucher No column
 			row = {
 				'customer': customer,
 				'customer_name': customer_name,
-				'sales_invoice': rec_name if is_sales_invoice and not first_allocation_done else '',
-				'invoice_date': rec_date if not first_allocation_done else None,
-				'invoice_amount': rec_amount if not first_allocation_done else None,
-				'allocation_amount': allocation,
-				'balance': rec_remaining,
-				'collection_amount': credit['amount'],
-				'voucher_no': credit['name'],
-				'voucher_type': credit['voucher_type'],
-				'voucher_date': credit['date'],
-				'voucher_amount': credit['amount'],
-				'debit': rec_amount if not first_allocation_done else None,
-				'credit': allocation,
-				'running_balance': running_balance,
-				'opening_credit_balance': None,
-				'days': days,
-			}
-			data.append(row)
-			first_allocation_done = True
-
-			# Move to next credit if fully used
-			if credit['remaining'] <= 0:
-				credit_idx += 1
-
-		# If receivable not fully cleared (no more credits), show remaining balance
-		if rec_remaining > 0 and not first_allocation_done:
-			row = {
-				'customer': customer,
-				'customer_name': customer_name,
-				'sales_invoice': rec_name if is_sales_invoice else '',
+				'sales_invoice': '',  # Empty for JV
 				'invoice_date': rec_date,
 				'invoice_amount': rec_amount,
-				'allocation_amount': 0,
+				'allocation_amount': None,
 				'balance': rec_remaining,
 				'collection_amount': None,
-				'voucher_no': rec_name if not is_sales_invoice else '',
-				'voucher_type': rec_type,
+				'voucher_no': rec_name,  # JV name in Voucher No
+				'voucher_type': rec_type,  # Journal Entry
 				'voucher_date': rec_date,
 				'voucher_amount': rec_amount,
 				'debit': rec_amount,
@@ -359,6 +314,110 @@ def build_invoice_centric_report(customer, customer_name, opening_balance, recei
 				'days': None,
 			}
 			data.append(row)
+			first_allocation_done = True  # Debit row is done
+
+			# Now allocate credits against this JV debit
+			while rec_remaining > 0 and credit_idx < len(credit_queue):
+				credit = credit_queue[credit_idx]
+
+				if credit['remaining'] <= 0:
+					credit_idx += 1
+					continue
+
+				allocation = min(rec_remaining, credit['remaining'])
+				rec_remaining = flt(rec_remaining - allocation)
+				credit['remaining'] = flt(credit['remaining'] - allocation)
+				running_balance = flt(running_balance - allocation)
+
+				days = date_diff(credit['date'], rec_date) if credit['date'] and rec_date else None
+
+				row = {
+					'customer': customer,
+					'customer_name': customer_name,
+					'sales_invoice': '',  # Empty for JV allocation rows
+					'invoice_date': None,
+					'invoice_amount': None,
+					'allocation_amount': allocation,
+					'balance': rec_remaining,
+					'collection_amount': credit['amount'],
+					'voucher_no': credit['name'],
+					'voucher_type': credit['voucher_type'],
+					'voucher_date': credit['date'],
+					'voucher_amount': credit['amount'],
+					'debit': None,
+					'credit': allocation,
+					'running_balance': running_balance,
+					'opening_credit_balance': None,
+					'days': days,
+				}
+				data.append(row)
+
+				if credit['remaining'] <= 0:
+					credit_idx += 1
+
+		else:
+			# Sales Invoice - Show SI name in sales_invoice column with allocations
+			while rec_remaining > 0 and credit_idx < len(credit_queue):
+				credit = credit_queue[credit_idx]
+
+				if credit['remaining'] <= 0:
+					credit_idx += 1
+					continue
+
+				allocation = min(rec_remaining, credit['remaining'])
+				rec_remaining = flt(rec_remaining - allocation)
+				credit['remaining'] = flt(credit['remaining'] - allocation)
+				running_balance = flt(running_balance - allocation)
+
+				days = date_diff(credit['date'], rec_date) if credit['date'] and rec_date else None
+
+				row = {
+					'customer': customer,
+					'customer_name': customer_name,
+					'sales_invoice': rec_name if not first_allocation_done else '',
+					'invoice_date': rec_date if not first_allocation_done else None,
+					'invoice_amount': rec_amount if not first_allocation_done else None,
+					'allocation_amount': allocation,
+					'balance': rec_remaining,
+					'collection_amount': credit['amount'],
+					'voucher_no': credit['name'],
+					'voucher_type': credit['voucher_type'],
+					'voucher_date': credit['date'],
+					'voucher_amount': credit['amount'],
+					'debit': rec_amount if not first_allocation_done else None,
+					'credit': allocation,
+					'running_balance': running_balance,
+					'opening_credit_balance': None,
+					'days': days,
+				}
+				data.append(row)
+				first_allocation_done = True
+
+				if credit['remaining'] <= 0:
+					credit_idx += 1
+
+			# If SI not fully cleared (no more credits), show remaining balance
+			if rec_remaining > 0 and not first_allocation_done:
+				row = {
+					'customer': customer,
+					'customer_name': customer_name,
+					'sales_invoice': rec_name,
+					'invoice_date': rec_date,
+					'invoice_amount': rec_amount,
+					'allocation_amount': 0,
+					'balance': rec_remaining,
+					'collection_amount': None,
+					'voucher_no': '',
+					'voucher_type': rec_type,
+					'voucher_date': rec_date,
+					'voucher_amount': rec_amount,
+					'debit': rec_amount,
+					'credit': None,
+					'running_balance': running_balance,
+					'opening_credit_balance': None,
+					'days': None,
+				}
+				data.append(row)
 
 	# Handle any remaining unallocated credits
 	while credit_idx < len(credit_queue):
