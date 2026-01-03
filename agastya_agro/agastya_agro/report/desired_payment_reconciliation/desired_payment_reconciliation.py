@@ -11,38 +11,32 @@ def execute(filters=None):
 
 def get_columns(filters):
 	"""
-	Columns matching the client's format:
-	Sales Invoice | Date | Amount | Allocation Amount | Balance | Collection Amount | (gap) | Voucher No | Voucher Type | Date | Amount | Opening Credit Balance
+	Columns with Debit/Credit like General Ledger for easy matching
 	"""
 	columns = [
 		{'label': 'Customer', 'fieldname': 'customer', 'fieldtype': 'Link', 'options': 'Customer', 'width': 100},
 		{'label': 'Customer Name', 'fieldname': 'customer_name', 'fieldtype': 'Data', 'width': 150},
-		{'label': 'Sales Invoice', 'fieldname': 'sales_invoice', 'fieldtype': 'Link', 'options': 'Sales Invoice', 'width': 140},
-		{'label': 'Date', 'fieldname': 'invoice_date', 'fieldtype': 'Date', 'width': 100},
-		{'label': 'Amount', 'fieldname': 'invoice_amount', 'fieldtype': 'Currency', 'width': 120},
-		{'label': 'Allocation Amount', 'fieldname': 'allocation_amount', 'fieldtype': 'Currency', 'width': 130},
-		{'label': 'Invoice Balance', 'fieldname': 'balance', 'fieldtype': 'Currency', 'width': 120},
-		{'label': 'Opening Credit Balance', 'fieldname': 'opening_credit_balance', 'fieldtype': 'Currency', 'width': 150},
-		{'label': 'Collection Amount', 'fieldname': 'collection_amount', 'fieldtype': 'Currency', 'width': 130},
-		# {'label': '', 'fieldname': 'blank', 'fieldtype': 'Data', 'width': 30},
-		{'label': 'Voucher No', 'fieldname': 'voucher_no', 'fieldtype': 'Dynamic Link', 'options': 'voucher_type', 'width': 150},
+		{'label': 'Posting Date', 'fieldname': 'posting_date', 'fieldtype': 'Date', 'width': 100},
 		{'label': 'Voucher Type', 'fieldname': 'voucher_type', 'fieldtype': 'Data', 'width': 120},
-		{'label': 'Voucher Date', 'fieldname': 'voucher_date', 'fieldtype': 'Date', 'width': 100},
-		{'label': 'Voucher Amount', 'fieldname': 'voucher_amount', 'fieldtype': 'Currency', 'width': 120},
+		{'label': 'Voucher No', 'fieldname': 'voucher_no', 'fieldtype': 'Dynamic Link', 'options': 'voucher_type', 'width': 150},
+		{'label': 'Debit', 'fieldname': 'debit', 'fieldtype': 'Currency', 'width': 120},
+		{'label': 'Credit', 'fieldname': 'credit', 'fieldtype': 'Currency', 'width': 120},
+		{'label': 'Balance', 'fieldname': 'balance', 'fieldtype': 'Currency', 'width': 120},
+		{'label': 'Against Invoice', 'fieldname': 'against_invoice', 'fieldtype': 'Data', 'width': 140},
+		{'label': 'Allocation Amount', 'fieldname': 'allocation_amount', 'fieldtype': 'Currency', 'width': 130},
 		{'label': 'Days', 'fieldname': 'days', 'fieldtype': 'Int', 'width': 80},
 	]
 	return columns
 
 def get_data(filters):
 	"""
-	FIFO Payment Reconciliation using GL Entry data
+	Payment Reconciliation with GL-style Debit/Credit display
 
 	Logic:
 	1. Get opening balance for the customer before the from_date
-	   - Positive = customer owes money (debit balance)
-	   - Negative = customer has advance/credit balance
-	2. Get all GL entries (debits = invoices, credits = payments) within date range
-	3. Allocate credits (payments) against debits (invoices) in FIFO order by date
+	2. Get all GL entries (Sales Invoice, Payment Entry, Journal Entry) within date range
+	3. Display chronologically with Debit/Credit columns like GL
+	4. Show FIFO allocation of payments against Sales Invoices
 	"""
 	data = []
 	customer = filters.get("customer")
@@ -58,25 +52,18 @@ def get_data(filters):
 
 	# =========================================================================
 	# STEP 1: Get Opening Balance
-	# Positive = Debit balance (customer owes)
-	# Negative = Credit balance (advance payment)
 	# =========================================================================
 	opening_balance = get_opening_balance(customer, company, f_date)
 
 	# =========================================================================
-	# STEP 2: Get all Sales Invoices (Debits) - sorted by date FIFO
+	# STEP 2: Get all GL entries chronologically
 	# =========================================================================
-	invoices = get_invoices(customer, company, f_date, t_date)
+	gl_entries = get_all_gl_entries(customer, company, f_date, t_date)
 
 	# =========================================================================
-	# STEP 3: Get all Payments/Credits (Payment Entries + Journal Entries)
+	# STEP 3: Build report with FIFO allocation and running balance
 	# =========================================================================
-	payments = get_payments(customer, company, f_date, t_date)
-
-	# =========================================================================
-	# STEP 4: FIFO Allocation
-	# =========================================================================
-	data = allocate_fifo(customer, customer_name, opening_balance, invoices, payments, f_date)
+	data = build_report_data(customer, customer_name, opening_balance, gl_entries, f_date)
 
 	return data
 
@@ -105,19 +92,18 @@ def get_opening_balance(customer, company, f_date):
 	return flt(result[0].opening) if result else 0
 
 
-def get_invoices(customer, company, f_date, t_date):
+def get_all_gl_entries(customer, company, f_date, t_date):
 	"""
-	Get all debit entries for the customer (increases receivable)
-	Includes: Sales Invoice, Journal Entry (debit entries)
-	Returns list sorted by date (FIFO)
+	Get all GL entries for the customer chronologically
+	Includes: Sales Invoice, Payment Entry, Journal Entry
+	Returns list sorted by date (like General Ledger)
 	"""
 	conditions = """
 		WHERE gl.party_type = 'Customer'
 		AND gl.party = %s
 		AND gl.company = %s
-		AND gl.debit > 0
 		AND gl.is_cancelled = 0
-		AND gl.voucher_type IN ('Sales Invoice', 'Journal Entry')
+		AND gl.voucher_type IN ('Sales Invoice', 'Payment Entry', 'Journal Entry')
 	"""
 	params = [customer, company]
 
@@ -125,277 +111,148 @@ def get_invoices(customer, company, f_date, t_date):
 		conditions += " AND gl.posting_date BETWEEN %s AND %s"
 		params.extend([f_date, t_date])
 
-	invoices = frappe.db.sql("""
+	gl_entries = frappe.db.sql("""
 		SELECT
 			gl.voucher_no as name,
 			gl.posting_date as date,
-			gl.debit as amount,
+			gl.debit,
+			gl.credit,
 			gl.voucher_type
 		FROM `tabGL Entry` gl
 		{conditions}
-		ORDER BY gl.posting_date ASC, gl.voucher_no ASC
+		ORDER BY gl.posting_date ASC, gl.creation ASC
 	""".format(conditions=conditions), params, as_dict=True)
 
-	# Add remaining balance to each invoice
-	for inv in invoices:
-		inv['remaining'] = flt(inv['amount'])
-
-	return invoices
+	return gl_entries
 
 
-def get_payments(customer, company, f_date, t_date):
+def build_report_data(customer, customer_name, opening_balance, gl_entries, f_date):
 	"""
-	Get all Payments (credit entries) for the customer
-	Includes: Payment Entry, Journal Entry (non-system-generated)
-	Returns list of payments sorted by date (FIFO)
-	"""
-	conditions = """
-		WHERE gl.party_type = 'Customer'
-		AND gl.party = %s
-		AND gl.company = %s
-		AND gl.credit > 0
-		AND gl.is_cancelled = 0
-		AND gl.voucher_type IN ('Payment Entry', 'Journal Entry')
-	"""
-	params = [customer, company]
+	Build report data with GL-style display (Debit/Credit columns) and FIFO allocation
 
-	if f_date and t_date:
-		conditions += " AND gl.posting_date BETWEEN %s AND %s"
-		params.extend([f_date, t_date])
-
-	payments = frappe.db.sql("""
-		SELECT
-			gl.voucher_no as name,
-			gl.posting_date as date,
-			gl.credit as amount,
-			gl.voucher_type,
-			gl.against as against_account
-		FROM `tabGL Entry` gl
-		{conditions}
-		ORDER BY gl.posting_date ASC, gl.voucher_no ASC
-	""".format(conditions=conditions), params, as_dict=True)
-
-	# Add remaining balance to each payment
-	for pmt in payments:
-		pmt['remaining'] = flt(pmt['amount'])
-
-	return payments
-
-
-def allocate_fifo(customer, customer_name, opening_balance, invoices, payments, f_date):
-	"""
-	Allocate payments against invoices in FIFO order
-
-	Logic:
-	1. If opening balance is positive (customer owes), first allocate payments against it
-	2. If opening balance is negative (advance), treat it as available credit for invoices
-	3. Then allocate remaining payments against invoices in date order
+	Shows entries chronologically like General Ledger with:
+	- Debit column for Sales Invoice and JV debits
+	- Credit column for Payment Entry and JV credits
+	- Running balance
+	- FIFO allocation of payments against Sales Invoices
 	"""
 	data = []
-	payment_idx = 0
+	running_balance = opening_balance
 
-	# Track available credit from opening balance (if negative)
-	available_credit = abs(opening_balance) if opening_balance < 0 else 0
-	original_opening_credit = available_credit  # Store original for reference
+	# Separate Sales Invoices for FIFO allocation tracking
+	sales_invoices = []
+	for entry in gl_entries:
+		if entry['voucher_type'] == 'Sales Invoice' and flt(entry['debit']) > 0:
+			sales_invoices.append({
+				'name': entry['name'],
+				'date': entry['date'],
+				'amount': flt(entry['debit']),
+				'remaining': flt(entry['debit'])
+			})
 
-	# =========================================================================
-	# Handle Positive Opening Balance (Customer owes money from before)
-	# =========================================================================
-	if opening_balance > 0:
-		opening_remaining = opening_balance
-		first_opening_row = True
-
-		while opening_remaining > 0 and payment_idx < len(payments):
-			pmt = payments[payment_idx]
-
-			if pmt['remaining'] <= 0:
-				payment_idx += 1
-				continue
-
-			# Calculate allocation
-			allocation = min(opening_remaining, pmt['remaining'])
-			opening_remaining = flt(opening_remaining - allocation)
-			pmt['remaining'] = flt(pmt['remaining'] - allocation)
-
-			# Calculate days: voucher_date - invoice_date
-			days = date_diff(pmt['date'], f_date) if f_date and pmt['date'] else None
-
-			# Add row
-			row = {
-				'customer': customer,
-				'customer_name': customer_name,
-				'sales_invoice': 'Opening Balance' if first_opening_row else '',
-				'invoice_date': f_date if first_opening_row else None,
-				'invoice_amount': opening_balance if first_opening_row else None,
-				'allocation_amount': allocation,
-				'balance': opening_remaining,
-				'collection_amount': pmt['amount'],
-				'blank': '',
-				'voucher_no': pmt['name'],
-				'voucher_type': pmt['voucher_type'],
-				'voucher_date': pmt['date'],
-				'voucher_amount': pmt['amount'],
-				'opening_credit_balance': None,  # Not applicable for positive opening balance
-				'days': days,
-			}
-			data.append(row)
-			first_opening_row = False
-
-			# Move to next payment if exhausted
-			if pmt['remaining'] <= 0:
-				payment_idx += 1
-
-		# If opening balance still has remaining (not fully paid)
-		if opening_remaining > 0 and first_opening_row:
-			row = {
-				'customer': customer,
-				'customer_name': customer_name,
-				'sales_invoice': 'Opening Balance',
-				'invoice_date': f_date,
-				'invoice_amount': opening_balance,
-				'allocation_amount': 0,
-				'balance': opening_remaining,
-				'collection_amount': 0,
-				'blank': '',
-				'voucher_no': '',
-				'voucher_type': '',
-				'voucher_date': None,
-				'voucher_amount': 0,
-				'opening_credit_balance': None,  # Not applicable for positive opening balance
-				'days': None,
-			}
-			data.append(row)
+	# Track current invoice index for FIFO allocation
+	invoice_idx = 0
 
 	# =========================================================================
-	# Allocate against Invoices in FIFO order
+	# Opening Balance Row
 	# =========================================================================
-	for inv in invoices:
-		inv_remaining = inv['remaining']
-		first_invoice_row = True
-
-		# First, use available credit from negative opening balance
-		if available_credit > 0 and inv_remaining > 0:
-			allocation = min(inv_remaining, available_credit)
-			inv_remaining = flt(inv_remaining - allocation)
-			available_credit = flt(available_credit - allocation)
-
-			# Calculate days: voucher_date (f_date for opening credit) - invoice_date
-			days = date_diff(f_date, inv['date']) if f_date and inv['date'] else None
-
-			row = {
-				'customer': customer,
-				'customer_name': customer_name,
-				'sales_invoice': inv['name'],
-				'invoice_date': inv['date'],
-				'invoice_amount': inv['amount'],
-				'allocation_amount': allocation,
-				'balance': inv_remaining,
-				'collection_amount': original_opening_credit,  # Show original credit balance
-				'blank': '',
-				'voucher_no': 'Opening Credit',
-				'voucher_type': 'Opening Balance',
-				'voucher_date': f_date,
-				'voucher_amount': original_opening_credit,
-				'opening_credit_balance': available_credit,  # Show remaining opening credit after this allocation
-				'days': days,
-			}
-			data.append(row)
-			first_invoice_row = False
-
-		# Then allocate from payments while invoice has remaining balance
-		while inv_remaining > 0 and payment_idx < len(payments):
-			pmt = payments[payment_idx]
-
-			if pmt['remaining'] <= 0:
-				payment_idx += 1
-				continue
-
-			# Calculate allocation
-			allocation = min(inv_remaining, pmt['remaining'])
-			inv_remaining = flt(inv_remaining - allocation)
-			pmt['remaining'] = flt(pmt['remaining'] - allocation)
-
-			# Determine balance to show:
-			# If invoice has remaining -> show invoice remaining
-			# If invoice is fully paid but payment has remaining -> show payment remaining (negative to indicate credit)
-			if inv_remaining > 0:
-				balance_to_show = inv_remaining
-			elif pmt['remaining'] > 0:
-				balance_to_show = -pmt['remaining']  # Negative indicates payment has excess
-			else:
-				balance_to_show = 0
-
-			# Calculate days: voucher_date - invoice_date
-			days = date_diff(pmt['date'], inv['date']) if pmt['date'] and inv['date'] else None
-
-			# Add row
-			row = {
-				'customer': customer,
-				'customer_name': customer_name,
-				'sales_invoice': inv['name'] if first_invoice_row else '',
-				'invoice_date': inv['date'] if first_invoice_row else None,
-				'invoice_amount': inv['amount'] if first_invoice_row else None,
-				'allocation_amount': allocation,
-				'balance': balance_to_show,
-				'collection_amount': pmt['amount'],
-				'blank': '',
-				'voucher_no': pmt['name'],
-				'voucher_type': pmt['voucher_type'],
-				'voucher_date': pmt['date'],
-				'voucher_amount': pmt['amount'],
-				'opening_credit_balance': available_credit if original_opening_credit > 0 else None,  # Show remaining opening credit
-				'days': days,
-			}
-			data.append(row)
-			first_invoice_row = False
-
-			# Move to next payment if exhausted
-			if pmt['remaining'] <= 0:
-				payment_idx += 1
-
-		# If invoice has no allocation at all (unpaid), show it
-		if first_invoice_row:
-			row = {
-				'customer': customer,
-				'customer_name': customer_name,
-				'sales_invoice': inv['name'],
-				'invoice_date': inv['date'],
-				'invoice_amount': inv['amount'],
-				'allocation_amount': 0,
-				'balance': inv['amount'],
-				'collection_amount': 0,
-				'blank': '',
-				'voucher_no': '',
-				'voucher_type': '',
-				'voucher_date': None,
-				'voucher_amount': 0,
-				'opening_credit_balance': available_credit if original_opening_credit > 0 else None,  # Show remaining opening credit
-				'days': None,
-			}
-			data.append(row)
+	if opening_balance != 0:
+		row = {
+			'customer': customer,
+			'customer_name': customer_name,
+			'posting_date': f_date,
+			'voucher_type': 'Opening',
+			'voucher_no': '',
+			'debit': opening_balance if opening_balance > 0 else 0,
+			'credit': abs(opening_balance) if opening_balance < 0 else 0,
+			'balance': running_balance,
+			'against_invoice': '',
+			'allocation_amount': None,
+			'days': None,
+		}
+		data.append(row)
 
 	# =========================================================================
-	# Show remaining unallocated payments (adds to closing credit)
+	# Process each GL entry chronologically
 	# =========================================================================
-	for pmt in payments:
-		if pmt['remaining'] > 0:
-			row = {
-				'customer': customer,
-				'customer_name': customer_name,
-				'sales_invoice': 'Unallocated Payment',
-				'invoice_date': None,
-				'invoice_amount': None,
-				'allocation_amount': 0,
-				'balance': None,
-				'collection_amount': pmt['amount'],
-				'blank': '',
-				'voucher_no': pmt['name'],
-				'voucher_type': pmt['voucher_type'],
-				'voucher_date': pmt['date'],
-				'voucher_amount': pmt['amount'],
-				'opening_credit_balance': available_credit if original_opening_credit > 0 else None,  # Show remaining opening credit
-				'days': None,
-			}
-			data.append(row)
+	for entry in gl_entries:
+		debit = flt(entry['debit'])
+		credit = flt(entry['credit'])
+
+		# Update running balance
+		running_balance = flt(running_balance + debit - credit)
+
+		# Determine allocation for credit entries (payments)
+		against_invoice = ''
+		allocation_amount = None
+		days = None
+
+		if credit > 0 and entry['voucher_type'] in ('Payment Entry', 'Journal Entry'):
+			# FIFO allocation against Sales Invoices
+			remaining_credit = credit
+			allocated_invoices = []
+
+			while remaining_credit > 0 and invoice_idx < len(sales_invoices):
+				inv = sales_invoices[invoice_idx]
+
+				if inv['remaining'] <= 0:
+					invoice_idx += 1
+					continue
+
+				# Allocate
+				allocation = min(remaining_credit, inv['remaining'])
+				inv['remaining'] = flt(inv['remaining'] - allocation)
+				remaining_credit = flt(remaining_credit - allocation)
+
+				allocated_invoices.append(inv['name'])
+
+				# Calculate days from invoice date to payment date
+				if inv['date'] and entry['date']:
+					days = date_diff(entry['date'], inv['date'])
+
+				# Move to next invoice if current is fully paid
+				if inv['remaining'] <= 0:
+					invoice_idx += 1
+
+			if allocated_invoices:
+				against_invoice = ', '.join(allocated_invoices)
+				allocation_amount = credit - remaining_credit  # Amount actually allocated
+
+		# Build row
+		row = {
+			'customer': customer,
+			'customer_name': customer_name,
+			'posting_date': entry['date'],
+			'voucher_type': entry['voucher_type'],
+			'voucher_no': entry['name'],
+			'debit': debit if debit > 0 else None,
+			'credit': credit if credit > 0 else None,
+			'balance': running_balance,
+			'against_invoice': against_invoice,
+			'allocation_amount': allocation_amount,
+			'days': days,
+		}
+		data.append(row)
+
+	# =========================================================================
+	# Closing/Total Row
+	# =========================================================================
+	total_debit = sum(flt(e['debit']) for e in gl_entries)
+	total_credit = sum(flt(e['credit']) for e in gl_entries)
+
+	row = {
+		'customer': customer,
+		'customer_name': customer_name,
+		'posting_date': None,
+		'voucher_type': 'Closing',
+		'voucher_no': '',
+		'debit': total_debit + (opening_balance if opening_balance > 0 else 0),
+		'credit': total_credit + (abs(opening_balance) if opening_balance < 0 else 0),
+		'balance': running_balance,
+		'against_invoice': '',
+		'allocation_amount': None,
+		'days': None,
+	}
+	data.append(row)
 
 	return data
