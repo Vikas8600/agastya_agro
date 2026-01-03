@@ -400,35 +400,6 @@ def allocate_fifo(customer, customer_name, opening_balance, invoices, payments, 
 				payment_idx += 1
 				continue
 
-			# Check for JV debits between current position and payment date
-			while jv_debit_idx < len(jv_debits):
-				jv = jv_debits[jv_debit_idx]
-				if jv['date'] <= pmt['date']:
-					running_balance = flt(running_balance + jv['amount'])
-					row = {
-						'customer': customer,
-						'customer_name': customer_name,
-						'sales_invoice': '',
-						'invoice_date': None,
-						'invoice_amount': None,
-						'allocation_amount': None,
-						'balance': None,
-						'collection_amount': None,
-						'voucher_no': jv['name'],
-						'voucher_type': jv['voucher_type'],
-						'voucher_date': jv['date'],
-						'voucher_amount': jv['amount'],
-						'debit': jv['amount'],
-						'credit': None,
-						'running_balance': running_balance,
-						'opening_credit_balance': None,
-						'days': None,
-					}
-					data.append(row)
-					jv_debit_idx += 1
-				else:
-					break
-
 			# Calculate allocation
 			allocation = min(inv_remaining, pmt['remaining'])
 			inv_remaining = flt(inv_remaining - allocation)
