@@ -224,11 +224,18 @@ def allocate_fifo(customer, customer_name, opening_balance, invoices, payments, 
 	"""
 	Allocate payments against invoices in FIFO order
 	Shows Debit/Credit columns like GL for easy matching
+
+	Running Balance = Opening + Sum(Debits) - Sum(Credits)
+	- Debits (Sales Invoice, JV Debit) increase running balance
+	- Credits (Payment Entry, JV Credit) decrease running balance
 	"""
 	data = []
 	payment_idx = 0
 	jv_debit_idx = 0
 	running_balance = opening_balance
+
+	# Track which payments have been added to running_balance (to avoid double counting)
+	payments_added_to_balance = set()
 
 	# Track available credit from opening balance (if negative)
 	available_credit = abs(opening_balance) if opening_balance < 0 else 0
@@ -252,7 +259,11 @@ def allocate_fifo(customer, customer_name, opening_balance, invoices, payments, 
 			allocation = min(opening_remaining, pmt['remaining'])
 			opening_remaining = flt(opening_remaining - allocation)
 			pmt['remaining'] = flt(pmt['remaining'] - allocation)
-			running_balance = flt(running_balance - allocation)
+
+			# Update running balance with FULL credit amount (only once per payment)
+			if pmt['name'] not in payments_added_to_balance:
+				running_balance = flt(running_balance - pmt['amount'])
+				payments_added_to_balance.add(pmt['name'])
 
 			# Calculate days
 			days = date_diff(pmt['date'], f_date) if f_date and pmt['date'] else None
@@ -309,10 +320,17 @@ def allocate_fifo(customer, customer_name, opening_balance, invoices, payments, 
 	# =========================================================================
 	# Allocate against Invoices in FIFO order
 	# =========================================================================
+	# Track which invoices have been added to running_balance
+	invoices_added_to_balance = set()
+
 	for inv in invoices:
 		inv_remaining = inv['remaining']
 		first_invoice_row = True
-		running_balance = flt(running_balance + inv['amount'])
+
+		# Add invoice debit to running balance (only once)
+		if inv['name'] not in invoices_added_to_balance:
+			running_balance = flt(running_balance + inv['amount'])
+			invoices_added_to_balance.add(inv['name'])
 
 		# Check for JV debits that occurred on or before this invoice date
 		while jv_debit_idx < len(jv_debits):
@@ -415,7 +433,11 @@ def allocate_fifo(customer, customer_name, opening_balance, invoices, payments, 
 			allocation = min(inv_remaining, pmt['remaining'])
 			inv_remaining = flt(inv_remaining - allocation)
 			pmt['remaining'] = flt(pmt['remaining'] - allocation)
-			running_balance = flt(running_balance - allocation)
+
+			# Update running balance with FULL credit amount (only once per payment)
+			if pmt['name'] not in payments_added_to_balance:
+				running_balance = flt(running_balance - pmt['amount'])
+				payments_added_to_balance.add(pmt['name'])
 
 			if inv_remaining > 0:
 				balance_to_show = inv_remaining
@@ -503,11 +525,13 @@ def allocate_fifo(customer, customer_name, opening_balance, invoices, payments, 
 		jv_debit_idx += 1
 
 	# =========================================================================
-	# Show remaining unallocated payments
+	# Show remaining unallocated payments (those not yet added to running_balance)
 	# =========================================================================
 	for pmt in payments:
-		if pmt['remaining'] > 0:
-			running_balance = flt(running_balance - pmt['remaining'])
+		if pmt['remaining'] > 0 and pmt['name'] not in payments_added_to_balance:
+			# This payment was never used, subtract full amount
+			running_balance = flt(running_balance - pmt['amount'])
+			payments_added_to_balance.add(pmt['name'])
 			row = {
 				'customer': customer,
 				'customer_name': customer_name,
@@ -522,7 +546,7 @@ def allocate_fifo(customer, customer_name, opening_balance, invoices, payments, 
 				'voucher_date': pmt['date'],
 				'voucher_amount': pmt['amount'],
 				'debit': None,
-				'credit': pmt['remaining'],
+				'credit': pmt['amount'],
 				'running_balance': running_balance,
 				'opening_credit_balance': available_credit if original_opening_credit > 0 else None,
 				'days': None,
