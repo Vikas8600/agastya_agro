@@ -143,6 +143,7 @@ def _execute(filters=None, additional_table_columns=None, additional_query_colum
 			'additional_discount_percentage': d.additional_discount_percentage,
 			'additional_discount_amount': d.invoice_discount_amount,
 			'net_rate': d.item_net_rate,
+			'cost_center': d.cost_center,
 		}
 
 		if additional_query_columns:
@@ -459,6 +460,13 @@ def get_columns(additional_table_columns, filters):
 			'fieldtype': 'Currency',
 			'options': 'currency',
 			'width': 100
+		},
+		{
+			'label': _('Cost Center'),
+			'fieldname': 'cost_center',
+			'fieldtype': 'Link',
+			'options': 'Cost Center',
+			'width': 120
 		}
 	]
 
