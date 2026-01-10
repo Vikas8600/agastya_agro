@@ -31,10 +31,11 @@ frappe.query_reports["Desired Payment Reconciliation"] = {
 		{
 			fieldname: "customer",
 			label: __("Customer"),
-			fieldtype: "Link",
+			fieldtype: "MultiSelectList",
 			width: "80",
-			options: "Customer",
-			reqd:0
+			get_data: function(txt) {
+				return frappe.db.get_link_options("Customer", txt);
+			}
 		},
 		{
 			fieldname: "inv_no",

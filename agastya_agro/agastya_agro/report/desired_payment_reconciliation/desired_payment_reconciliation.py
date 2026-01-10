@@ -40,29 +40,73 @@ def get_data(filters):
 
 	Shows invoices in date order, with payments allocated against each invoice
 	First invoice must be fully cleared before moving to next invoice
+	Supports multiple customers with partition rows between them
 	"""
 	data = []
-	customer = filters.get("customer")
+	customer_filter = filters.get("customer")
 	f_date = filters.get("f_date")
 	t_date = filters.get("t_date")
 	company = filters.get("company")
 
-	if not customer or not company:
+	if not company:
 		return data
 
-	customer_name = frappe.get_cached_value("Customer", customer, "customer_name") or customer
+	# Parse customer filter - can be single customer or comma-separated list
+	customers = []
+	if customer_filter:
+		if isinstance(customer_filter, list):
+			customers = customer_filter
+		elif isinstance(customer_filter, str):
+			# Handle comma-separated string from MultiSelectLink
+			customers = [c.strip() for c in customer_filter.split(',') if c.strip()]
+		else:
+			customers = [customer_filter]
 
-	# Get opening balance
-	opening_balance = get_opening_balance(customer, company, f_date)
+	if not customers:
+		return data
 
-	# Get all receivables (Sales Invoice + JV debits) sorted by date ASC
-	receivables = get_receivables(customer, company, f_date, t_date)
+	# Process each customer
+	for idx, customer in enumerate(customers):
+		customer_name = frappe.get_cached_value("Customer", customer, "customer_name") or customer
 
-	# Get all credit entries (payments, JV credits) sorted by date ASC
-	credits = get_credit_entries(customer, company, f_date, t_date)
+		# Get opening balance
+		opening_balance = get_opening_balance(customer, company, f_date)
 
-	# Build report - receivable by receivable with FIFO allocation
-	data = build_invoice_centric_report(customer, customer_name, opening_balance, receivables, credits, f_date)
+		# Get all receivables (Sales Invoice + JV debits) sorted by date ASC
+		receivables = get_receivables(customer, company, f_date, t_date)
+
+		# Get all credit entries (payments, JV credits) sorted by date ASC
+		credits = get_credit_entries(customer, company, f_date, t_date)
+
+		# Build report - receivable by receivable with FIFO allocation
+		customer_data = build_invoice_centric_report(customer, customer_name, opening_balance, receivables, credits, f_date)
+
+		# Add customer data to main data
+		data.extend(customer_data)
+
+		# Add partition row between customers (not after last customer)
+		if idx < len(customers) - 1:
+			partition_row = {
+				'customer': '',
+				'customer_name': '',
+				'sales_invoice': '─' * 20,  # Visual separator
+				'invoice_date': None,
+				'invoice_amount': None,
+				'allocation_amount': None,
+				'balance': None,
+				'collection_balance': None,
+				'collection_amount': None,
+				'voucher_no': '',
+				'voucher_type': '',
+				'voucher_date': None,
+				'voucher_amount': None,
+				'debit': None,
+				'credit': None,
+				'running_balance': None,
+				'opening_credit_balance': None,
+				'days': None,
+			}
+			data.append(partition_row)
 
 	return data
 
