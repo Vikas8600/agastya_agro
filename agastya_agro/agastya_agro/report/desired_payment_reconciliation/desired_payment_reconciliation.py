@@ -296,18 +296,22 @@ def build_invoice_centric_report(customer, customer_name, opening_balance, recei
 			}
 			data.append(row)
 
-	elif opening_balance < 0:
-		# Negative opening balance (credit balance)
+	# Track opening credit balance for allocation against invoices
+	opening_credit_remaining = 0
+
+	if opening_balance < 0:
+		# Negative opening balance (credit balance) - will be allocated against invoices
+		opening_credit_remaining = abs(opening_balance)
 		row = {
 			'customer': customer,
 			'customer_name': customer_name,
-			'sales_invoice': 'Opening Balance',
+			'sales_invoice': 'Opening Balance (Credit)',
 			'invoice_date': f_date,
-			'invoice_amount': abs(opening_balance),
+			'invoice_amount': None,
 			'allocation_amount': None,
 			'balance': None,
-			'collection_balance': None,
-			'collection_amount': None,
+			'collection_balance': opening_credit_remaining,
+			'collection_amount': abs(opening_balance),
 			'voucher_no': '',
 			'voucher_type': 'Opening',
 			'voucher_date': f_date,
@@ -315,7 +319,7 @@ def build_invoice_centric_report(customer, customer_name, opening_balance, recei
 			'debit': None,
 			'credit': abs(opening_balance),
 			'running_balance': running_balance,
-			'opening_credit_balance': None,
+			'opening_credit_balance': opening_credit_remaining,
 			'days': None,
 		}
 		data.append(row)
@@ -364,6 +368,37 @@ def build_invoice_centric_report(customer, customer_name, opening_balance, recei
 			data.append(row)
 			first_allocation_done = True  # Debit row is done
 
+			# First, allocate from opening credit balance if available
+			# Note: Don't adjust running_balance here - opening credit is already in the starting balance
+			if opening_credit_remaining > 0 and rec_remaining > 0:
+				allocation = min(rec_remaining, opening_credit_remaining)
+				rec_remaining = flt(rec_remaining - allocation)
+				opening_credit_remaining = flt(opening_credit_remaining - allocation)
+
+				days = date_diff(rec_date, f_date) if rec_date and f_date else None
+
+				row = {
+					'customer': customer,
+					'customer_name': customer_name,
+					'sales_invoice': '',  # Empty for JV allocation rows
+					'invoice_date': None,
+					'invoice_amount': None,
+					'allocation_amount': allocation,
+					'balance': rec_remaining,
+					'collection_balance': opening_credit_remaining,
+					'collection_amount': abs(opening_balance),
+					'voucher_no': 'Opening Credit',
+					'voucher_type': 'Opening',
+					'voucher_date': f_date,
+					'voucher_amount': abs(opening_balance),
+					'debit': None,
+					'credit': None,  # Not a new credit entry, just allocation display
+					'running_balance': running_balance,
+					'opening_credit_balance': opening_credit_remaining,
+					'days': days,
+				}
+				data.append(row)
+
 			# Now allocate credits against this JV debit
 			while rec_remaining > 0 and credit_idx < len(credit_queue):
 				credit = credit_queue[credit_idx]
@@ -406,6 +441,40 @@ def build_invoice_centric_report(customer, customer_name, opening_balance, recei
 
 		else:
 			# Sales Invoice - Show SI name in sales_invoice column with allocations
+
+			# First, allocate from opening credit balance if available
+			# Note: Don't adjust running_balance here - opening credit is already in the starting balance
+			if opening_credit_remaining > 0 and rec_remaining > 0:
+				allocation = min(rec_remaining, opening_credit_remaining)
+				rec_remaining = flt(rec_remaining - allocation)
+				opening_credit_remaining = flt(opening_credit_remaining - allocation)
+
+				days = date_diff(rec_date, f_date) if rec_date and f_date else None
+
+				row = {
+					'customer': customer,
+					'customer_name': customer_name,
+					'sales_invoice': rec_name,
+					'invoice_date': rec_date,
+					'invoice_amount': rec_amount,
+					'allocation_amount': allocation,
+					'balance': rec_remaining,
+					'collection_balance': opening_credit_remaining,
+					'collection_amount': abs(opening_balance),
+					'voucher_no': 'Opening Credit',
+					'voucher_type': 'Opening',
+					'voucher_date': f_date,
+					'voucher_amount': abs(opening_balance),
+					'debit': rec_amount,
+					'credit': None,  # Not a new credit entry, just allocation display
+					'running_balance': running_balance,
+					'opening_credit_balance': opening_credit_remaining,
+					'days': days,
+				}
+				data.append(row)
+				first_allocation_done = True
+
+			# Then allocate from credit queue (payments)
 			while rec_remaining > 0 and credit_idx < len(credit_queue):
 				credit = credit_queue[credit_idx]
 
@@ -469,6 +538,30 @@ def build_invoice_centric_report(customer, customer_name, opening_balance, recei
 					'days': None,
 				}
 				data.append(row)
+
+	# Handle any remaining unallocated opening credit
+	if opening_credit_remaining > 0:
+		row = {
+			'customer': customer,
+			'customer_name': customer_name,
+			'sales_invoice': 'Unallocated Opening Credit',
+			'invoice_date': None,
+			'invoice_amount': None,
+			'allocation_amount': None,
+			'balance': None,
+			'collection_balance': opening_credit_remaining,
+			'collection_amount': abs(opening_balance),
+			'voucher_no': 'Opening Credit',
+			'voucher_type': 'Opening',
+			'voucher_date': f_date,
+			'voucher_amount': abs(opening_balance),
+			'debit': None,
+			'credit': None,
+			'running_balance': running_balance,
+			'opening_credit_balance': opening_credit_remaining,
+			'days': None,
+		}
+		data.append(row)
 
 	# Handle any remaining unallocated credits
 	while credit_idx < len(credit_queue):
