@@ -66,6 +66,12 @@ def get_data(filters):
 	if not customers:
 		customers = get_all_customers_with_transactions(company, f_date, t_date)
 
+	# Filter out empty/null customer values
+	customers = [c for c in customers if c and c.strip()]
+
+	# Track if we need to add partition (only after customers with actual data)
+	last_customer_had_data = False
+
 	# Process each customer
 	for idx, customer in enumerate(customers):
 		customer_name = frappe.get_cached_value("Customer", customer, "customer_name") or customer
@@ -79,14 +85,12 @@ def get_data(filters):
 		# Get all credit entries (payments, JV credits) sorted by date ASC
 		credits = get_credit_entries(customer, company, f_date, t_date)
 
-		# Build report - receivable by receivable with FIFO allocation
-		customer_data = build_invoice_centric_report(customer, customer_name, opening_balance, receivables, credits, f_date)
+		# Skip customers with no data (no opening balance and no transactions)
+		if opening_balance == 0 and not receivables and not credits:
+			continue
 
-		# Add customer data to main data
-		data.extend(customer_data)
-
-		# Add partition row between customers (not after last customer)
-		if idx < len(customers) - 1:
+		# Add partition row before this customer (if previous customer had data)
+		if last_customer_had_data:
 			partition_row = {
 				'customer': '',
 				'customer_name': '',
@@ -109,6 +113,13 @@ def get_data(filters):
 			}
 			data.append(partition_row)
 
+		# Build report - receivable by receivable with FIFO allocation
+		customer_data = build_invoice_centric_report(customer, customer_name, opening_balance, receivables, credits, f_date)
+
+		# Add customer data to main data
+		data.extend(customer_data)
+		last_customer_had_data = True
+
 	return data
 
 
@@ -118,6 +129,8 @@ def get_all_customers_with_transactions(company, f_date, t_date):
 		WHERE gl.party_type = 'Customer'
 		AND gl.company = %s
 		AND gl.is_cancelled = 0
+		AND gl.party IS NOT NULL
+		AND gl.party != ''
 	"""
 	params = [company]
 
