@@ -66,15 +66,18 @@ def get_data(filters):
 	if not customers:
 		customers = get_all_customers_with_transactions(company, f_date, t_date)
 
-	# Filter out empty/null customer values
-	customers = [c for c in customers if c and c.strip()]
-
 	# Track if we need to add partition (only after customers with actual data)
 	last_customer_had_data = False
 
 	# Process each customer
 	for idx, customer in enumerate(customers):
-		customer_name = frappe.get_cached_value("Customer", customer, "customer_name") or customer
+		# Handle empty party - show as "(No Party)" for display
+		if not customer or not customer.strip():
+			customer_display = "(No Party)"
+			customer_name = "(Empty Party - Data Entry Error)"
+		else:
+			customer_display = customer
+			customer_name = frappe.get_cached_value("Customer", customer, "customer_name") or customer
 
 		# Get opening balance
 		opening_balance = get_opening_balance(customer, company, f_date)
@@ -114,7 +117,7 @@ def get_data(filters):
 			data.append(partition_row)
 
 		# Build report - receivable by receivable with FIFO allocation
-		customer_data = build_invoice_centric_report(customer, customer_name, opening_balance, receivables, credits, f_date)
+		customer_data = build_invoice_centric_report(customer_display, customer_name, opening_balance, receivables, credits, f_date)
 
 		# Add customer data to main data
 		data.extend(customer_data)
@@ -129,14 +132,12 @@ def get_all_customers_with_transactions(company, f_date, t_date):
 		WHERE gl.party_type = 'Customer'
 		AND gl.company = %s
 		AND gl.is_cancelled = 0
-		AND gl.party IS NOT NULL
-		AND gl.party != ''
 	"""
 	params = [company]
 
-	# Get customers with opening balance OR transactions in period
+	# Get customers with opening balance OR transactions in period (including empty party)
 	customers = frappe.db.sql("""
-		SELECT DISTINCT gl.party
+		SELECT DISTINCT COALESCE(gl.party, '') as party
 		FROM `tabGL Entry` gl
 		{conditions}
 		ORDER BY gl.party
