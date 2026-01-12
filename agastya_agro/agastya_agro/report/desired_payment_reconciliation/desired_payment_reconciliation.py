@@ -62,8 +62,9 @@ def get_data(filters):
 		else:
 			customers = [customer_filter]
 
+	# If no customer filter, get all customers with GL entries for this company
 	if not customers:
-		return data
+		customers = get_all_customers_with_transactions(company, f_date, t_date)
 
 	# Process each customer
 	for idx, customer in enumerate(customers):
@@ -109,6 +110,26 @@ def get_data(filters):
 			data.append(partition_row)
 
 	return data
+
+
+def get_all_customers_with_transactions(company, f_date, t_date):
+	"""Get all customers that have GL entries (either opening balance or transactions in period)"""
+	conditions = """
+		WHERE gl.party_type = 'Customer'
+		AND gl.company = %s
+		AND gl.is_cancelled = 0
+	"""
+	params = [company]
+
+	# Get customers with opening balance OR transactions in period
+	customers = frappe.db.sql("""
+		SELECT DISTINCT gl.party
+		FROM `tabGL Entry` gl
+		{conditions}
+		ORDER BY gl.party
+	""".format(conditions=conditions), params, as_dict=True)
+
+	return [c['party'] for c in customers]
 
 
 def get_opening_balance(customer, company, f_date):
