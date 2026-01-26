@@ -14,7 +14,7 @@ app_license = "MIT"
 
 # include js, css files in header of desk.html
 # app_include_css = "/assets/agastya_agro/css/agastya_agro.css"
-# app_include_js = "/assets/agastya_agro/js/agastya_agro.js"
+app_include_js = "/assets/agastya_agro/js/query_report_overrides.js"
 
 fixtures = fixtures = [
 		{"dt":"Custom Field", "filters": [["name", "in",(
@@ -152,9 +152,9 @@ doc_events = {
 # Overriding Methods
 # ------------------------------
 #
-override_whitelisted_methods = {
-	"frappe.utils.print_format.report_to_pdf": "agastya_agro.overrides.report_to_pdf"
-}
+# override_whitelisted_methods = {
+# 	"frappe.utils.print_format.report_to_pdf": "agastya_agro.overrides.report_to_pdf"
+# }
 #
 # each overriding function accepts a `data` argument;
 # generated from the base implementation of the doctype dashboard,
@@ -198,4 +198,3 @@ user_data_fields = [
 # auth_hooks = [
 # 	"agastya_agro.auth.validate"
 # ]
-

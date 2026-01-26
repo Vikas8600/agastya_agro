@@ -452,94 +452,94 @@ from frappe.utils.pdf import get_pdf
 import frappe
 
 
-@frappe.whitelist()
-def report_to_pdf(html, orientation="Landscape"):
-    soup = BeautifulSoup(html, "html.parser")
+# @frappe.whitelist()
+# def report_to_pdf(html, orientation="Landscape"):
+#     soup = BeautifulSoup(html, "html.parser")
 
-    filter_rows = soup.select("div.filter-row")
+#     filter_rows = soup.select("div.filter-row")
 
-    party_type = None
-    party_value_raw = None
-    party_values = []
-    party_row = None
-    party_name_row = None
+#     party_type = None
+#     party_value_raw = None
+#     party_values = []
+#     party_row = None
+#     party_name_row = None
 
-    # Extract necessary filter rows: Party Type, Party, Party Name (if exists)
-    for row in filter_rows:
-        label = row.find("b")
-        if label:
-            label_text = label.text.strip(":").lower()
-            if label_text == "party type":
-                party_type = row.get_text(strip=True).replace("Party Type:", "").strip()
-            elif label_text == "party":
-                party_row = row
-                party_value_raw = row.get_text(strip=True).replace("Party:", "").strip()
-            elif label_text == "party name":
-                party_name_row = row
+#     # Extract necessary filter rows: Party Type, Party, Party Name (if exists)
+#     for row in filter_rows:
+#         label = row.find("b")
+#         if label:
+#             label_text = label.text.strip(":").lower()
+#             if label_text == "party type":
+#                 party_type = row.get_text(strip=True).replace("Party Type:", "").strip()
+#             elif label_text == "party":
+#                 party_row = row
+#                 party_value_raw = row.get_text(strip=True).replace("Party:", "").strip()
+#             elif label_text == "party name":
+#                 party_name_row = row
 
-    # Split Party into individual values if multiple
-    if party_value_raw:
-        party_values = [p.strip() for p in party_value_raw.split(",") if p.strip()]
+#     # Split Party into individual values if multiple
+#     if party_value_raw:
+#         party_values = [p.strip() for p in party_value_raw.split(",") if p.strip()]
 
-    first_party = party_values[0] if party_values else None
+#     first_party = party_values[0] if party_values else None
 
-    if party_type and party_type.lower() == "customer" and first_party:
-        table = soup.find("table")
-        if table:
-            rows = table.find_all("tr")
+#     if party_type and party_type.lower() == "customer" and first_party:
+#         table = soup.find("table")
+#         if table:
+#             rows = table.find_all("tr")
 
-            debit_index = None
-            credit_index = None
+#             debit_index = None
+#             credit_index = None
 
-            if rows:
-                header_row = rows[0]
-                headers = header_row.find_all("th")
+#             if rows:
+#                 header_row = rows[0]
+#                 headers = header_row.find_all("th")
 
-                for idx, header in enumerate(headers):
-                    header_text = header.get_text(strip=True).lower()
-                    if "debit" in header_text:
-                        debit_index = idx
-                    elif "credit" in header_text:
-                        credit_index = idx
+#                 for idx, header in enumerate(headers):
+#                     header_text = header.get_text(strip=True).lower()
+#                     if "debit" in header_text:
+#                         debit_index = idx
+#                     elif "credit" in header_text:
+#                         credit_index = idx
 
-                if len(rows) > 1:
-                    first_data_row = rows[1]
-                    cells = first_data_row.find_all(["td", "th"])
-                    if debit_index is not None and debit_index < len(cells):
-                        cells[debit_index].string = ""
-                    if credit_index is not None and credit_index < len(cells):
-                        cells[credit_index].string = ""
+#                 if len(rows) > 1:
+#                     first_data_row = rows[1]
+#                     cells = first_data_row.find_all(["td", "th"])
+#                     if debit_index is not None and debit_index < len(cells):
+#                         cells[debit_index].string = ""
+#                     if credit_index is not None and credit_index < len(cells):
+#                         cells[credit_index].string = ""
 
-                if len(rows) > 2:
-                    last_data_row = rows[-1]
-                    cells = last_data_row.find_all(["td", "th"])
-                    if debit_index is not None and debit_index < len(cells):
-                        cells[debit_index].string = ""
-                    if credit_index is not None and credit_index < len(cells):
-                        cells[credit_index].string = ""
+#                 if len(rows) > 2:
+#                     last_data_row = rows[-1]
+#                     cells = last_data_row.find_all(["td", "th"])
+#                     if debit_index is not None and debit_index < len(cells):
+#                         cells[debit_index].string = ""
+#                     if credit_index is not None and credit_index < len(cells):
+#                         cells[credit_index].string = ""
 
-    # Determine insertion point: below Party Name if exists else below Party
-    insertion_row = party_name_row if party_name_row else party_row
+#     # Determine insertion point: below Party Name if exists else below Party
+#     insertion_row = party_name_row if party_name_row else party_row
 
-    if insertion_row and party_values:
-        last_inserted = insertion_row
-        for pv in party_values:
-            city = frappe.db.get_value("Customer", pv, "city")
-            if city:
-                city_div = soup.new_tag("div", **{"class": "filter-row"})
-                b_tag = soup.new_tag("b")
-                b_tag.string = "City:"
-                city_div.append(b_tag)
-                city_div.append(" " + city)
-                last_inserted.insert_after(city_div)
-                last_inserted = city_div  # next city after the last inserted div
+#     if insertion_row and party_values:
+#         last_inserted = insertion_row
+#         for pv in party_values:
+#             city = frappe.db.get_value("Customer", pv, "city")
+#             if city:
+#                 city_div = soup.new_tag("div", **{"class": "filter-row"})
+#                 b_tag = soup.new_tag("b")
+#                 b_tag.string = "City:"
+#                 city_div.append(b_tag)
+#                 city_div.append(" " + city)
+#                 last_inserted.insert_after(city_div)
+#                 last_inserted = city_div  # next city after the last inserted div
 
-        html = str(soup)
-    else:
-        html = str(soup)
+#         html = str(soup)
+#     else:
+#         html = str(soup)
 
-    make_access_log(file_type="PDF", method="PDF", page=html)
-    frappe.local.response.filename = "report.pdf"
-    frappe.local.response.filecontent = get_pdf(html, {"orientation": orientation})
-    frappe.local.response.type = "pdf"
+#     make_access_log(file_type="PDF", method="PDF", page=html)
+#     frappe.local.response.filename = "report.pdf"
+#     frappe.local.response.filecontent = get_pdf(html, {"orientation": orientation})
+#     frappe.local.response.type = "pdf"
 
