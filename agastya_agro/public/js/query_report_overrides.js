@@ -179,13 +179,14 @@
 	}
 
 	if (original_get_filters_html_for_print) {
-		const excluded_filter_fieldnames = new Set([
-			"categorize_by",
-			"tax_id",
-			"cost_center",
-			"project",
-			"include_dimensions",
-			"include_default_book_entries",
+		const allowed_filter_fieldnames = new Set([
+			"company",
+			"from_date",
+			"to_date",
+			"account",
+			"party_type",
+			"party",
+			"party_name",
 		]);
 
 		frappe.views.QueryReport.prototype.get_filters_html_for_print = function () {
@@ -195,7 +196,7 @@
 
 			const applied_filters = this.get_filter_values();
 			const filter_rows = Object.keys(applied_filters)
-				.filter((fieldname) => !excluded_filter_fieldnames.has(fieldname))
+				.filter((fieldname) => allowed_filter_fieldnames.has(fieldname))
 				.map((fieldname) => {
 					const docfield = frappe.query_report.get_filter(fieldname).df;
 					const value = applied_filters[fieldname];
