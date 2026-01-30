@@ -15,11 +15,11 @@
 	const preferred_columns = [
 		"posting_date",
 		"voucher_type",
+		"voucher_no",
+		"remarks",
 		"debit",
 		"credit",
 		"balance",
-		"voucher_no",
-		"remarks",
 	];
 
 	const normalize_party_values = (party_value) => {
