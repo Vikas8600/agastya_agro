@@ -3,6 +3,8 @@
 		frappe.views?.QueryReport?.prototype?.get_data_for_print;
 	const original_get_filters_html_for_print =
 		frappe.views?.QueryReport?.prototype?.get_filters_html_for_print;
+	const original_get_columns_for_print =
+		frappe.views?.QueryReport?.prototype?.get_columns_for_print;
 	const original_pdf_report = frappe.views?.QueryReport?.prototype?.pdf_report;
 	const original_print_report = frappe.views?.QueryReport?.prototype?.print_report;
 	const original_get_print_settings = frappe.ui.get_print_settings;
@@ -12,11 +14,10 @@
 
 	const preferred_columns = [
 		"posting_date",
-		"account",
+		"voucher_type",
 		"debit",
 		"credit",
 		"balance",
-		"voucher_type",
 		"voucher_no",
 		"remarks",
 	];
@@ -37,6 +38,48 @@
 				.filter(Boolean);
 		}
 		return [];
+	};
+
+	const reorder_print_columns = (print_settings, order) => {
+		if (!print_settings || !Array.isArray(print_settings.columns) || !Array.isArray(order)) {
+			return;
+		}
+		const order_index = new Map(order.map((fieldname, idx) => [fieldname, idx]));
+		const normalized = print_settings.columns.map((column, idx) => {
+			const fieldname = typeof column === "string" ? column : column?.fieldname;
+			const order_pos = order_index.has(fieldname) ? order_index.get(fieldname) : null;
+			return { column, idx, order_pos };
+		});
+
+		normalized.sort((a, b) => {
+			const a_has = a.order_pos !== null;
+			const b_has = b.order_pos !== null;
+			if (a_has && b_has) return a.order_pos - b.order_pos;
+			if (a_has) return -1;
+			if (b_has) return 1;
+			return a.idx - b.idx;
+		});
+
+		print_settings.columns = normalized.map((entry) => entry.column);
+	};
+
+	const reorder_print_column_objects = (columns, order) => {
+		if (!Array.isArray(columns) || !Array.isArray(order)) return columns;
+		const order_index = new Map(order.map((fieldname, idx) => [fieldname, idx]));
+		const normalized = columns.map((column, idx) => {
+			const fieldname = column?.fieldname || column?.field;
+			const order_pos = order_index.has(fieldname) ? order_index.get(fieldname) : null;
+			return { column, idx, order_pos };
+		});
+		normalized.sort((a, b) => {
+			const a_has = a.order_pos !== null;
+			const b_has = b.order_pos !== null;
+			if (a_has && b_has) return a.order_pos - b.order_pos;
+			if (a_has) return -1;
+			if (b_has) return 1;
+			return a.idx - b.idx;
+		});
+		return normalized.map((entry) => entry.column);
 	};
 
 	const load_customer_city_map = async (report) => {
@@ -164,6 +207,20 @@
 			const first_row = adjusted[0];
 			const last_row = adjusted[adjusted.length - 1];
 
+			adjusted.forEach((row) => {
+				if (!row || typeof row.account !== "string") return;
+				const account_label = row.account.trim();
+				if (!account_label) return;
+				const normalized = account_label.toLowerCase();
+				if (!normalized.includes("opening") && !normalized.includes("closing")) {
+					return;
+				}
+				if (!row.voucher_type) {
+					row.voucher_type = account_label;
+				}
+				row.account = "";
+			});
+
 			if (first_row) {
 				first_row.debit = "";
 				first_row.credit = "";
@@ -175,6 +232,19 @@
 			}
 
 			return adjusted;
+		};
+	}
+
+	if (original_get_columns_for_print) {
+		frappe.views.QueryReport.prototype.get_columns_for_print = function (
+			print_settings,
+			custom_format
+		) {
+			const columns = original_get_columns_for_print.call(this, print_settings, custom_format);
+			if (this.report_name !== "General Ledger") {
+				return columns;
+			}
+			return reorder_print_column_objects(columns, preferred_columns);
 		};
 	}
 
@@ -245,6 +315,7 @@
 	if (original_pdf_report) {
 		frappe.views.QueryReport.prototype.pdf_report = async function (print_settings) {
 			if (this.report_name === "General Ledger") {
+				reorder_print_columns(print_settings, preferred_columns);
 				await load_customer_city_map(this);
 			}
 			return original_pdf_report.call(this, print_settings);
@@ -254,6 +325,7 @@
 	if (original_print_report) {
 		frappe.views.QueryReport.prototype.print_report = async function (print_settings) {
 			if (this.report_name === "General Ledger") {
+				reorder_print_columns(print_settings, preferred_columns);
 				await load_customer_city_map(this);
 			}
 			return original_print_report.call(this, print_settings);
