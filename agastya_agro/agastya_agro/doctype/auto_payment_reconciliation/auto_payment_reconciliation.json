@@ -1,0 +1,168 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-03-22 12:19:15.158267",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "settings_section",
+  "enabled",
+  "company",
+  "party_type",
+  "run_time",
+  "column_break_1",
+  "receivable_payable_account",
+  "cost_center",
+  "bank_cash_account",
+  "filter_section",
+  "from_invoice_date",
+  "from_payment_date",
+  "column_break_2",
+  "to_invoice_date",
+  "to_payment_date",
+  "customer_section",
+  "reconcile_all_customers",
+  "customers"
+ ],
+ "fields": [
+  {
+   "fieldname": "settings_section",
+   "fieldtype": "Section Break",
+   "label": "Settings"
+  },
+  {
+   "default": "1",
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "label": "Enabled"
+  },
+  {
+   "fieldname": "company",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Company",
+   "options": "Company",
+   "reqd": 1
+  },
+  {
+   "default": "Customer",
+   "fieldname": "party_type",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Party Type",
+   "options": "DocType",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "receivable_payable_account",
+   "fieldtype": "Link",
+   "label": "Receivable / Payable Account",
+   "mandatory_depends_on": "eval:doc.company",
+   "options": "Account"
+  },
+  {
+   "default": "00:00",
+   "description": "Time at which auto reconciliation will run daily. Change this and save to update the schedule.",
+   "fieldname": "run_time",
+   "fieldtype": "Time",
+   "in_list_view": 1,
+   "label": "Daily Run Time",
+   "reqd": 1
+  },
+  {
+   "fieldname": "cost_center",
+   "fieldtype": "Link",
+   "label": "Cost Center",
+   "options": "Cost Center"
+  },
+  {
+   "fieldname": "bank_cash_account",
+   "fieldtype": "Link",
+   "label": "Bank / Cash Account",
+   "options": "Account"
+  },
+  {
+   "fieldname": "filter_section",
+   "fieldtype": "Section Break",
+   "label": "Filters"
+  },
+  {
+   "fieldname": "from_invoice_date",
+   "fieldtype": "Date",
+   "label": "From Invoice Date"
+  },
+  {
+   "fieldname": "from_payment_date",
+   "fieldtype": "Date",
+   "label": "From Payment Date"
+  },
+  {
+   "fieldname": "column_break_2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "to_invoice_date",
+   "fieldtype": "Date",
+   "label": "To Invoice Date"
+  },
+  {
+   "fieldname": "to_payment_date",
+   "fieldtype": "Date",
+   "label": "To Payment Date"
+  },
+  {
+   "fieldname": "customer_section",
+   "fieldtype": "Section Break",
+   "label": "Customers"
+  },
+  {
+   "default": "1",
+   "description": "If checked, all customers with outstanding invoices will be reconciled. Uncheck to select specific customers below.",
+   "fieldname": "reconcile_all_customers",
+   "fieldtype": "Check",
+   "label": "Reconcile All Customers"
+  },
+  {
+   "depends_on": "eval:!doc.reconcile_all_customers",
+   "fieldname": "customers",
+   "fieldtype": "Table",
+   "label": "Customers",
+   "options": "Auto Payment Reconciliation Customer"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-03-22 12:54:27.941749",
+ "modified_by": "Administrator",
+ "module": "Agastya Agro",
+ "name": "Auto Payment Reconciliation",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "read": 1,
+   "role": "Accounts Manager",
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}
