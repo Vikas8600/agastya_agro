@@ -191,7 +191,10 @@ def get_receivables(customer, company, f_date, t_date):
 			gl.debit as amount,
 			gl.voucher_type
 		FROM `tabGL Entry` gl
+		LEFT JOIN `tabJournal Entry` jv ON gl.voucher_type = 'Journal Entry'
+			AND gl.voucher_no = jv.name
 		{conditions}
+		AND (gl.voucher_type != 'Journal Entry' OR IFNULL(jv.is_system_generated, 0) = 0)
 		ORDER BY gl.posting_date ASC, gl.creation ASC
 	""".format(conditions=conditions), params, as_dict=True)
 
@@ -223,7 +226,10 @@ def get_credit_entries(customer, company, f_date, t_date):
 			gl.credit as amount,
 			gl.voucher_type
 		FROM `tabGL Entry` gl
+		LEFT JOIN `tabJournal Entry` jv ON gl.voucher_type = 'Journal Entry'
+			AND gl.voucher_no = jv.name
 		{conditions}
+		AND (gl.voucher_type != 'Journal Entry' OR IFNULL(jv.is_system_generated, 0) = 0)
 		ORDER BY gl.posting_date ASC, gl.creation ASC
 	""".format(conditions=conditions), params, as_dict=True)
 
