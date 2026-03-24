@@ -2,7 +2,7 @@
 # For license information, please see license.txt
 
 import frappe
-from frappe.utils import flt, getdate, date_diff
+from frappe.utils import flt, getdate, date_diff, add_days
 
 def execute(filters=None):
 	columns = get_columns(filters)
@@ -31,6 +31,7 @@ def get_columns(filters):
 		{'label': 'Credit', 'fieldname': 'credit', 'fieldtype': 'Currency', 'width': 120},
 		{'label': 'Running Balance', 'fieldname': 'running_balance', 'fieldtype': 'Currency', 'width': 130},
 		{'label': 'Days', 'fieldname': 'days', 'fieldtype': 'Int', 'width': 80},
+		{'label': 'Opening Vouchers', 'fieldname': 'opening_vouchers', 'fieldtype': 'Small Text', 'width': 300},
 	]
 	return columns
 
@@ -82,6 +83,9 @@ def get_data(filters):
 		# Get opening balance
 		opening_balance = get_opening_balance(customer, company, f_date)
 
+		# Get opening voucher detail
+		opening_vouchers_detail = get_opening_vouchers_detail(customer, company, f_date) if opening_balance != 0 else ""
+
 		# Get all receivables (Sales Invoice + JV debits) sorted by date ASC
 		receivables = get_receivables(customer, company, f_date, t_date)
 
@@ -117,7 +121,7 @@ def get_data(filters):
 			data.append(partition_row)
 
 		# Build report - receivable by receivable with FIFO allocation
-		customer_data = build_invoice_centric_report(customer_display, customer_name, opening_balance, receivables, credits, f_date)
+		customer_data = build_invoice_centric_report(customer_display, customer_name, opening_balance, receivables, credits, f_date, opening_vouchers_detail)
 
 		# Add customer data to main data
 		data.extend(customer_data)
@@ -163,6 +167,39 @@ def get_opening_balance(customer, company, f_date):
 	""", (customer, company, f_date), as_dict=True)
 
 	return flt(result[0].opening) if result else 0
+
+
+def get_opening_vouchers_detail(customer, company, f_date):
+	"""Get voucher-wise breakdown of opening balance using AR report"""
+	if not f_date:
+		return ""
+
+	from erpnext.accounts.report.accounts_receivable.accounts_receivable import execute
+
+	ar_filters = frappe._dict({
+		"company": company,
+		"report_date": add_days(f_date, -1),
+		"party_type": "Customer",
+		"party": [customer],
+		"ageing_based_on": "Posting Date",
+		"range1": 30, "range2": 60, "range3": 90, "range4": 120,
+	})
+
+	try:
+		columns, data, *rest = execute(ar_filters)
+	except Exception:
+		return ""
+
+	lines = []
+	for row in data:
+		if isinstance(row, dict) and row.get("voucher_no"):
+			vtype = row.get("voucher_type", "")
+			vno = row.get("voucher_no", "")
+			outstanding = flt(row.get("outstanding"))
+			date = row.get("posting_date", "")
+			lines.append(f"{vtype}: {vno} | {outstanding} | {date}")
+
+	return "\n".join(lines)
 
 
 def get_receivables(customer, company, f_date, t_date):
@@ -236,7 +273,7 @@ def get_credit_entries(customer, company, f_date, t_date):
 	return credits
 
 
-def build_invoice_centric_report(customer, customer_name, opening_balance, receivables, credits, f_date):
+def build_invoice_centric_report(customer, customer_name, opening_balance, receivables, credits, f_date, opening_vouchers_detail=""):
 	"""
 	Build report showing:
 	1. Opening Balance first - allocate credits until cleared
@@ -305,6 +342,7 @@ def build_invoice_centric_report(customer, customer_name, opening_balance, recei
 				'running_balance': running_balance,
 				'opening_credit_balance': None,
 				'days': days,
+				'opening_vouchers': opening_vouchers_detail if not first_allocation_done else '',
 			}
 			data.append(row)
 			first_allocation_done = True
@@ -334,6 +372,7 @@ def build_invoice_centric_report(customer, customer_name, opening_balance, recei
 				'running_balance': running_balance,
 				'opening_credit_balance': None,
 				'days': None,
+				'opening_vouchers': opening_vouchers_detail,
 			}
 			data.append(row)
 
@@ -362,6 +401,7 @@ def build_invoice_centric_report(customer, customer_name, opening_balance, recei
 			'running_balance': running_balance,
 			'opening_credit_balance': opening_credit_remaining,
 			'days': None,
+			'opening_vouchers': opening_vouchers_detail,
 		}
 		data.append(row)
 
