@@ -3,7 +3,7 @@
 
 import frappe
 from frappe.model.document import Document
-from frappe.utils import get_time
+from frappe.utils import get_time, today, date_diff, getdate, cint
 
 
 JOB_NAME = "auto_payment_reconciliation.process_auto_reconciliation"
@@ -71,6 +71,13 @@ def process_auto_reconciliation():
 	if not config.enabled:
 		return
 
+	# Check interval - skip if not enough days since last run
+	interval = cint(config.interval_days) or 1
+	if config.last_run_date:
+		days_since = date_diff(today(), config.last_run_date)
+		if days_since < interval:
+			return
+
 	customers = get_customers_to_reconcile(config)
 
 	if not customers:
@@ -121,3 +128,7 @@ def process_auto_reconciliation():
 			frappe.log_error(
 				title=f"Auto Payment Reconciliation failed for {customer}",
 			)
+
+	# Update last run date
+	frappe.db.set_single_value("Auto Payment Reconciliation", "last_run_date", today())
+	frappe.db.commit()

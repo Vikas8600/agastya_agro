@@ -10,6 +10,8 @@
   "company",
   "party_type",
   "run_time",
+  "interval_days",
+  "last_run_date",
   "column_break_1",
   "receivable_payable_account",
   "cost_center",
@@ -66,12 +68,26 @@
   },
   {
    "default": "00:00",
-   "description": "Time at which auto reconciliation will run daily. Change this and save to update the schedule.",
+   "description": "Time at which auto reconciliation will run. Change this and save to update the schedule.",
    "fieldname": "run_time",
    "fieldtype": "Time",
    "in_list_view": 1,
-   "label": "Daily Run Time",
+   "label": "Run Time",
    "reqd": 1
+  },
+  {
+   "default": "1",
+   "description": "Run every N days. E.g. 1 = daily, 2 = every 2 days, 7 = weekly.",
+   "fieldname": "interval_days",
+   "fieldtype": "Int",
+   "label": "Interval (Days)",
+   "reqd": 1
+  },
+  {
+   "fieldname": "last_run_date",
+   "fieldtype": "Date",
+   "label": "Last Run Date",
+   "read_only": 1
   },
   {
    "fieldname": "cost_center",
@@ -138,7 +154,7 @@
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-03-22 12:54:27.941749",
+ "modified": "2026-03-25 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Agastya Agro",
  "name": "Auto Payment Reconciliation",
