@@ -31,7 +31,7 @@ def get_columns(filters):
 		{'label': 'Credit', 'fieldname': 'credit', 'fieldtype': 'Currency', 'width': 120},
 		{'label': 'Running Balance', 'fieldname': 'running_balance', 'fieldtype': 'Currency', 'width': 130},
 		{'label': 'Days', 'fieldname': 'days', 'fieldtype': 'Int', 'width': 80},
-		{'label': 'Opening Vouchers', 'fieldname': 'opening_vouchers', 'fieldtype': 'Small Text', 'width': 300},
+		{'label': 'Opening Vouchers', 'fieldname': 'opening_vouchers', 'fieldtype': 'HTML', 'width': 400},
 	]
 	return columns
 
@@ -178,7 +178,7 @@ def get_opening_vouchers_detail(customer, company, f_date):
 
 	ar_filters = frappe._dict({
 		"company": company,
-		"report_date": add_days(f_date, -1),
+		"report_date": f_date,
 		"party_type": "Customer",
 		"party": [customer],
 		"ageing_based_on": "Posting Date",
@@ -199,7 +199,7 @@ def get_opening_vouchers_detail(customer, company, f_date):
 			date = row.get("posting_date", "")
 			lines.append(f"{vtype}: {vno} | {outstanding} | {date}")
 
-	return "\n".join(lines)
+	return "<br>".join(lines)
 
 
 def get_receivables(customer, company, f_date, t_date):
