@@ -23,10 +23,20 @@ frappe.ui.form.on("Process Payment Reconciliation", {
 				if (!comments || !comments.length) return;
 
 				const html = comments[0].content || "";
-				// Comment content is HTML — pull the linked Redo name out of it.
-				const match =
-					html.match(/Payment Reconciliation Redo[^A-Z0-9]*([A-Z0-9-]+)/i) || [];
-				const redo_name = match[1];
+				// Comment content is HTML produced by get_link_to_form, e.g.
+				//   ... <a href="/app/payment-reconciliation-redo/PRR-2026-00002">PRR-2026-00002</a>
+				// Pull the doc name out of the href (most reliable). Fall back to
+				// the anchor inner text if the href shape ever changes.
+				let redo_name = null;
+				const href_match = html.match(
+					/\/app\/payment-reconciliation-redo\/([^"'#?\s<>]+)/i
+				);
+				if (href_match) {
+					redo_name = decodeURIComponent(href_match[1]);
+				} else {
+					const text_match = html.match(/>([^<]*PRR[\w-]*)</i);
+					if (text_match) redo_name = text_match[1].trim();
+				}
 
 				let msg;
 				if (redo_name) {
