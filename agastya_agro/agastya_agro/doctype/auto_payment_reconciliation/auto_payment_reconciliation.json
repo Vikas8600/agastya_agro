@@ -12,6 +12,7 @@
   "run_time",
   "interval_days",
   "last_run_date",
+  "redo_max_days",
   "column_break_1",
   "receivable_payable_account",
   "cost_center",
@@ -88,6 +89,14 @@
    "fieldtype": "Date",
    "label": "Last Run Date",
    "read_only": 1
+  },
+  {
+   "default": "62",
+   "description": "Maximum date range (in days) allowed in Payment Reconciliation Redo. Larger ranges may time out on heavy customers.",
+   "fieldname": "redo_max_days",
+   "fieldtype": "Int",
+   "label": "Redo Max Days",
+   "non_negative": 1
   },
   {
    "fieldname": "cost_center",

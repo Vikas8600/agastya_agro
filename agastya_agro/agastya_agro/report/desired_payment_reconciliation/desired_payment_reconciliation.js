@@ -43,5 +43,12 @@ frappe.query_reports["Desired Payment Reconciliation"] = {
 			fieldtype: "Data",
 			width: "80",
 		},
-	]
+	],
+
+	formatter: function(value, row, column, data, default_formatter) {
+		if (column.fieldname === "opening_vouchers" && value) {
+			return value;
+		}
+		return default_formatter(value, row, column, data);
+	}
 };

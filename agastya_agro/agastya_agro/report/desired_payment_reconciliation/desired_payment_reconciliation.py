@@ -2,7 +2,8 @@
 # For license information, please see license.txt
 
 import frappe
-from frappe.utils import flt, getdate, date_diff, add_days
+from frappe.utils import flt, getdate, date_diff
+from agastya_agro.agastya_agro.report.desired_payment_reconciliation.opening_vouchers import get_opening_vouchers_detail
 
 def execute(filters=None):
 	columns = get_columns(filters)
@@ -167,39 +168,6 @@ def get_opening_balance(customer, company, f_date):
 	""", (customer, company, f_date), as_dict=True)
 
 	return flt(result[0].opening) if result else 0
-
-
-def get_opening_vouchers_detail(customer, company, f_date):
-	"""Get voucher-wise breakdown of opening balance using AR report"""
-	if not f_date:
-		return ""
-
-	from erpnext.accounts.report.accounts_receivable.accounts_receivable import execute
-
-	ar_filters = frappe._dict({
-		"company": company,
-		"report_date": f_date,
-		"party_type": "Customer",
-		"party": [customer],
-		"ageing_based_on": "Posting Date",
-		"range1": 30, "range2": 60, "range3": 90, "range4": 120,
-	})
-
-	try:
-		columns, data, *rest = execute(ar_filters)
-	except Exception:
-		return ""
-
-	lines = []
-	for row in data:
-		if isinstance(row, dict) and row.get("voucher_no"):
-			vtype = row.get("voucher_type", "")
-			vno = row.get("voucher_no", "")
-			outstanding = flt(row.get("outstanding"))
-			date = row.get("posting_date", "")
-			lines.append(f"{vtype}: {vno} | {outstanding} | {date}")
-
-	return "<br>".join(lines)
 
 
 def get_receivables(customer, company, f_date, t_date):
