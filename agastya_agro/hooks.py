@@ -127,6 +127,12 @@ doc_events = {
 # Scheduled Tasks
 # ---------------
 
+scheduler_events = {
+	"daily_long": [
+		"agastya_agro.agastya_agro.reconciliation.mismatch_scan.scan_reconciliation_mismatches"
+	]
+}
+
 # scheduler_events = {
 # 	"all": [
 # 		"agastya_agro.tasks.all"
