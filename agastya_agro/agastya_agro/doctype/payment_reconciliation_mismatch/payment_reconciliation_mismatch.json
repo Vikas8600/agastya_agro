@@ -27,6 +27,7 @@
   "credit_posting_date",
   "column_break_3",
   "credit_amount",
+  "payment_backdated_by_days",
   "amounts_section",
   "actual_allocated",
   "desired_allocated",
@@ -146,7 +147,7 @@
    "description": "Days between the invoice posting date and the date it was actually entered. A large value is the usual cause of a wrong allocation.",
    "fieldname": "backdated_by_days",
    "fieldtype": "Int",
-   "label": "Backdated By (Days)",
+   "label": "Invoice Backdated By (Days)",
    "read_only": 1
   },
   {
@@ -265,6 +266,13 @@
    "fieldtype": "Link",
    "label": "Receivable Account",
    "options": "Account",
+   "read_only": 1
+  },
+  {
+   "description": "Days between the payment's posting date and the day it was actually entered. A payment booked late is the usual reason an allocation went wrong: by the time it was entered, later payments had already taken the invoices it should have cleared.",
+   "fieldname": "payment_backdated_by_days",
+   "fieldtype": "Int",
+   "label": "Payment Entered Late By (Days)",
    "read_only": 1
   }
  ],

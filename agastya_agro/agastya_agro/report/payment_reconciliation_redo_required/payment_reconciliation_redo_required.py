@@ -66,6 +66,12 @@ def get_conditions(filters):
 		conditions.append("m.credit_posting_date <= %(upto_date)s")
 		values["upto_date"] = filters.upto_date
 
+	if cint(filters.get("payment_late_beyond")):
+		# The report's real trigger: a payment received a while ago but only
+		# entered now, which is what knocks the allocation order out.
+		conditions.append("m.payment_backdated_by_days >= %(payment_late_beyond)s")
+		values["payment_late_beyond"] = cint(filters.payment_late_beyond)
+
 	if cint(filters.get("backdated_beyond")):
 		conditions.append("m.backdated_by_days >= %(backdated_beyond)s")
 		values["backdated_beyond"] = cint(filters.backdated_beyond)
@@ -113,6 +119,7 @@ def get_summary_data(filters):
 			SUM(CASE WHEN m.mismatch_type = 'Unallocated Payment' THEN 1 ELSE 0 END) AS unallocated_payment,
 			MIN(m.debit_posting_date) AS oldest_affected_date,
 			MAX(m.backdated_by_days) AS max_backdated_days,
+			MAX(m.payment_backdated_by_days) AS max_payment_late_days,
 			MIN(CASE WHEN m.actual_allocated > m.desired_allocated THEN m.debit_posting_date END) AS money_sitting_on,
 			MIN(CASE WHEN m.desired_allocated > m.actual_allocated THEN m.debit_posting_date END) AS should_sit_on,
 			COUNT(DISTINCT m.suggested_from_date) AS suggested_runs,
@@ -201,6 +208,7 @@ def get_detail_data(filters):
 			m.credit_voucher,
 			m.credit_posting_date,
 			m.credit_amount,
+			m.payment_backdated_by_days,
 			m.actual_allocated,
 			m.desired_allocated,
 			m.difference,
@@ -307,11 +315,12 @@ def get_columns(filters):
 			{"label": _("Invoice"), "fieldname": "debit_voucher", "fieldtype": "Dynamic Link", "options": "debit_voucher_type", "width": 150},
 			{"label": _("Invoice Date"), "fieldname": "debit_posting_date", "fieldtype": "Date", "width": 100},
 			{"label": _("Invoice Amount"), "fieldname": "debit_amount", "fieldtype": "Currency", "width": 120},
-			{"label": _("Backdated By (Days)"), "fieldname": "backdated_by_days", "fieldtype": "Int", "width": 100},
+			{"label": _("Invoice Backdated (Days)"), "fieldname": "backdated_by_days", "fieldtype": "Int", "width": 120},
 			{"label": _("Payment Type"), "fieldname": "credit_voucher_type", "fieldtype": "Data", "width": 110},
 			{"label": _("Payment"), "fieldname": "credit_voucher", "fieldtype": "Dynamic Link", "options": "credit_voucher_type", "width": 150},
 			{"label": _("Payment Date"), "fieldname": "credit_posting_date", "fieldtype": "Date", "width": 100},
 			{"label": _("Payment Amount"), "fieldname": "credit_amount", "fieldtype": "Currency", "width": 120},
+		{"label": _("Payment Entered Late (Days)"), "fieldname": "payment_backdated_by_days", "fieldtype": "Int", "width": 140},
 			{"label": _("Actual Allocated"), "fieldname": "actual_allocated", "fieldtype": "Currency", "width": 120},
 			{"label": _("Desired Allocated"), "fieldname": "desired_allocated", "fieldtype": "Currency", "width": 120},
 			{"label": _("Difference"), "fieldname": "difference", "fieldtype": "Currency", "width": 120},
@@ -332,7 +341,8 @@ def get_columns(filters):
 		{"label": _("Amount Mismatch"), "fieldname": "amount_mismatch", "fieldtype": "Int", "width": 130},
 		{"label": _("Unallocated Payment"), "fieldname": "unallocated_payment", "fieldtype": "Int", "width": 140},
 		{"label": _("Oldest Affected"), "fieldname": "oldest_affected_date", "fieldtype": "Date", "width": 110},
-		{"label": _("Max Backdated (Days)"), "fieldname": "max_backdated_days", "fieldtype": "Int", "width": 120},
+		{"label": _("Payment Entered Late (Days)"), "fieldname": "max_payment_late_days", "fieldtype": "Int", "width": 140},
+		{"label": _("Invoice Backdated (Days)"), "fieldname": "max_backdated_days", "fieldtype": "Int", "width": 130},
 		{"label": _("Money Sitting On"), "fieldname": "money_sitting_on", "fieldtype": "Date", "width": 120},
 		{"label": _("Should Sit On"), "fieldname": "should_sit_on", "fieldtype": "Date", "width": 120},
 		{"label": _("Ageing Shift (Days)"), "fieldname": "ageing_shift", "fieldtype": "Int", "width": 130},

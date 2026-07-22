@@ -262,9 +262,16 @@ def scan_customer(customer, company, redo_max_days=62, scanned_on=None, mismatch
 	meta = _voucher_meta(vouchers, customer, company)
 
 	if mismatch_from:
-		# Keep only what is recent enough to be worth correcting, judged on the
-		# payment date -- that is what a Redo actually unreconciles, so anything
-		# older would drag old settled history back open.
+		# Judged on the PAYMENT date only.
+		#
+		# A Redo unreconciles by payment date, so restricting payments to on/after
+		# the cut-off is what actually guarantees nothing older gets disturbed --
+		# no old payment is touched and no entry is written into a closed period.
+		#
+		# The invoice it lands on may be older, and usually is: the case this whole
+		# report exists for is a payment received weeks ago and entered late, which
+		# under FIFO belongs against whatever is oldest and still open. Requiring
+		# the invoice to be recent too would hide almost every one of them.
 		cutoff = getdate(mismatch_from)
 		mismatches = [
 			row
@@ -320,6 +327,7 @@ def scan_customer(customer, company, redo_max_days=62, scanned_on=None, mismatch
 			"credit_voucher": row["credit_voucher"],
 			"credit_posting_date": credit_meta.get("posting_date"),
 			"credit_amount": credit_meta.get("amount"),
+			"payment_backdated_by_days": credit_meta.get("backdated_by_days") or 0,
 			"actual_allocated": row["actual_allocated"],
 			"desired_allocated": row["desired_allocated"],
 			"difference": row["difference"],

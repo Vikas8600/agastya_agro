@@ -67,8 +67,14 @@ frappe.query_reports["Payment Reconciliation Redo Required"] = {
 			default: 1,
 		},
 		{
+			fieldname: "payment_late_beyond",
+			label: __("Payment Entered Late Beyond (Days)"),
+			fieldtype: "Int",
+			default: 0,
+		},
+		{
 			fieldname: "backdated_beyond",
-			label: __("Backdated Beyond (Days)"),
+			label: __("Invoice Backdated Beyond (Days)"),
 			fieldtype: "Int",
 			default: 0,
 		},

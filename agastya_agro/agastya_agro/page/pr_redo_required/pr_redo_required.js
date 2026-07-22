@@ -133,6 +133,7 @@ const TEMPLATE = `
 		<a href="#prx-detail">Detail columns</a>
 		<a href="#prx-filters">Filters</a>
 		<a href="#prx-actions">Buttons</a>
+		<a href="#prx-scope">What it will not touch</a>
 		<a href="#prx-faq">Common questions</a>
 	</div>
 
@@ -187,30 +188,34 @@ const TEMPLATE = `
 	</div>
 
 	<h2 id="prx-eg">Worked example</h2>
-	<p>A real customer, four ledger entries, so the arithmetic can be checked by hand.</p>
+	<p>A real customer. Everything below sits inside the reporting window, and the arithmetic
+	closes exactly &mdash; nothing is rounded or hand-waved.</p>
 	<div class="prx-eg">
-		<div class="ledger">01-Apr-2022   Receivable          + 23,822     &lt;- still open
-06-Jan-2024   Receivable          + 39,595
-06-Jan-2024   Payment             - 39,595     -&gt; all of it went here
-31-Mar-2026   Credit              - 23,822     &lt;- applied to nothing</div>
+		<div class="ledger">Bills raised          09-Jun   ₹41,110
+                      15-Jun   ₹14,012
+                      16-Jun   ₹14,599
+                      19-Jun   ₹67,654
+
+Payments received     19-Jun   ₹30,000   → applied correctly
+                      27-Jun   ₹25,000   → applied correctly
+                      15-Jul   ₹30,000   → applied to NOTHING</div>
 	</div>
-	<p>The ₹39,595 payment cleared a bill raised <b>the same morning</b>, while ₹23,822 from
-	<b>2022</b> sat untouched. Oldest-first, it should have gone:</p>
+	<p>The first two payments were matched properly, oldest bill first. The third was never
+	matched at all. After those two payments the open balances are ₹122, then ₹14,599, then
+	₹67,654 &mdash; so the ₹30,000 should go:</p>
 	<div class="prx-eg">
-		<div class="ledger">₹39,595 payment
-   ├─ ₹23,822  →  clears the April-2022 receivable
-   └─ ₹15,773  →  part-pays the Jan-2024 receivable
+		<div class="ledger">₹30,000 payment (15-Jul)
+   ├─ ₹    122  →  bill of 15-Jun   clears the remainder
+   ├─ ₹ 14,599  →  bill of 16-Jun   clears it in full
+   └─ ₹ 15,279  →  bill of 19-Jun   part payment
 
-₹23,822 credit (Mar-2026)
-   └─ ₹23,822  →  clears the rest of the Jan-2024 receivable
-
-Everything clears. The customer owes nothing.</div>
+      122 + 14,599 + 15,279 = 30,000  ✓</div>
 	</div>
 	<div class="prx-note">
 		<div class="h">What the ageing report was saying</div>
-		<p>₹23,822 outstanding since April 2022 &mdash; a <b>four-year-old debt</b> &mdash; while a
-		credit for the exact same amount sat unapplied a few rows away. The debt was never real.
-		That is the <span class="prx-key">Ageing Shift</span> column doing its job.</p>
+		<p>Three June bills sitting in the overdue column, with the money for them already
+		received and lying unapplied. The report worked the split across three bills out on its
+		own &mdash; nobody told it how to divide ₹30,000.</p>
 	</div>
 
 	<h2 id="prx-types">The four mismatch types</h2>
@@ -324,6 +329,22 @@ Everything clears. The customer owes nothing.</div>
 		crying wolf forever.</p>
 	</div>
 
+	<h2 id="prx-scope">What the system will and will not touch</h2>
+	<p>On <b>Auto Payment Reconciliation</b> there is a setting called
+	<span class="prx-key">Report Mismatches From</span>. It is the safety line.</p>
+	<div class="prx-note warn">
+		<div class="h">Nothing dated before that date is ever touched</div>
+		<p><b>Both</b> the payment and the invoice must fall on or after it. A Redo raised from
+		this report can never reopen a voucher older than the line you drew &mdash; last year's
+		reconciliation stays exactly as it is.</p>
+	</div>
+	<p>This is what keeps the job manageable. Reported across the whole history, the list runs
+	to tens of thousands of rows and nearly every customer &mdash; work nobody could ever get
+	through. With the line drawn it stays a short, actionable list.</p>
+	<p class="muted">The trade-off is deliberate: an old bill that is wrong stays wrong. The
+	business decided that disturbing settled history costs more than leaving it. Move the date
+	back and those cases reappear on the next scan.</p>
+
 	<h2 id="prx-faq">Common questions</h2>
 	<h3>Will this change my outstanding figures?</h3>
 	<p>Per customer the net position does not change &mdash; money moves between invoices, it is not
@@ -334,6 +355,9 @@ Everything clears. The customer owes nothing.</div>
 	<h3>What about credit notes?</h3>
 	<p>Counted. The scan reads the same payment ledger ERPNext's own reconciliation uses, so credit
 	notes, refunds and journal adjustments all count as settlement.</p>
+	<h3>Will it disturb last year's books?</h3>
+	<p>No. With <b>Report Mismatches From</b> set, both the payment and the invoice must be dated
+	on or after it. Older vouchers are never included, so settled periods are left alone.</p>
 	<h3>Are these figures live?</h3>
 	<p>No. They are as of the last scan &mdash; the banner at the top of the report always says
 	when that was. Entries posted since then are not included.</p>
