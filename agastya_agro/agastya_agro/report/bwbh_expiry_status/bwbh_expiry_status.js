@@ -48,6 +48,40 @@ frappe.query_reports["BWBH Expiry Status"] = {
             "label": "Brand",
             "fieldtype": "Link",
             "options": "Brand"
+        },
+        {
+            "fieldname": "ageing_basis",
+            "label": "Ageing Basis",
+            "fieldtype": "Select",
+            "options": ["Balance Days", "Lapsed Days"],
+            "default": "Balance Days"
+        },
+        {
+            "fieldname": "ageing_range",
+            "label": "Ageing Range",
+            "fieldtype": "Select",
+            "options": [
+                "",
+                "0-30",
+                "31-60",
+                "61-90",
+                "91-120",
+                "121-150",
+                "151-180",
+                "181-200",
+                "201-300",
+                "301-400",
+                "401-500",
+                "501-600",
+                "601-700",
+                "701-800",
+                "801-900",
+                "901-1000",
+                "1001-1100",
+                ">1100",
+                "Expired",
+                "No Expiry Date"
+            ]
         }
     ]
 };
