@@ -5,9 +5,103 @@ import frappe
 import datetime
 from frappe.utils import flt,getdate,cint
 
+AGEING_BUCKETS = [
+	(0, 30, "0-30"),
+	(31, 60, "31-60"),
+	(61, 90, "61-90"),
+	(91, 120, "91-120"),
+	(121, 150, "121-150"),
+	(151, 180, "151-180"),
+	(181, 200, "181-200"),
+	(201, 300, "201-300"),
+	(301, 400, "301-400"),
+	(401, 500, "401-500"),
+	(501, 600, "501-600"),
+	(601, 700, "601-700"),
+	(701, 800, "701-800"),
+	(801, 900, "801-900"),
+	(901, 1000, "901-1000"),
+	(1001, 1100, "1001-1100"),
+]
+AGEING_ORDER = [b[2] for b in AGEING_BUCKETS] + [">1100", "Expired", "No Expiry Date"]
+
+
+def get_ageing_bucket(days):
+	if days is None:
+		return "No Expiry Date"
+	if days < 0:
+		return "Expired"
+	for lo, hi, label in AGEING_BUCKETS:
+		if lo <= days <= hi:
+			return label
+	return ">1100"
+
+
+def filter_by_ageing(rows, filters):
+	# Two independent range filters, ANDed together. Either can be blank.
+	lapsed_range = filters.get("lapsed_range")
+	balance_range = filters.get("balance_range")
+	if not lapsed_range and not balance_range:
+		return rows
+
+	out = []
+	for r in rows:
+		if lapsed_range and r.get("lapsed_ageing") != lapsed_range:
+			continue
+		if balance_range and r.get("balance_ageing") != balance_range:
+			continue
+		out.append(r)
+	return out
+
+
+def get_chart(rows, filters):
+	# Overview: both ageing distributions side by side, over the full result set.
+	lapsed_counts = {label: 0 for label in AGEING_ORDER}
+	balance_counts = {label: 0 for label in AGEING_ORDER}
+	for r in rows:
+		if r.get("lapsed_ageing") in lapsed_counts:
+			lapsed_counts[r["lapsed_ageing"]] += 1
+		if r.get("balance_ageing") in balance_counts:
+			balance_counts[r["balance_ageing"]] += 1
+
+	labels = [label for label in AGEING_ORDER if lapsed_counts[label] or balance_counts[label]]
+
+	chart_type = (filters.get("chart_type") or "Line").lower()
+
+	return {
+		"data": {
+			"labels": labels,
+			"datasets": [
+				{"name": "Lapsed Days", "values": [lapsed_counts[label] for label in labels]},
+				{"name": "Balance Days", "values": [balance_counts[label] for label in labels]},
+			],
+		},
+		"type": chart_type,
+		"height": 300,
+		"lineOptions": {"hideDots": 0, "regionFill": 0},
+	}
+
+
+def get_report_summary(rows):
+	total_lines = len(rows)
+	item_count = len({r.get("item_code") for r in rows})
+	total_qty = sum(flt(r.get("balance_qty")) for r in rows)
+
+	return [
+		{"value": item_count, "label": "Items", "datatype": "Int"},
+		{"value": total_lines, "label": "Batch Lines", "datatype": "Int"},
+		{"value": total_qty, "label": "Balance Qty", "datatype": "Float"},
+	]
+
+
 def execute(filters=None):
-	columns, data = get_columns(filters), get_data(filters)
-	return columns, data
+	filters = filters or {}
+	columns = get_columns(filters)
+	all_rows = get_data(filters)
+	data = filter_by_ageing(all_rows, filters)
+	chart = get_chart(all_rows, filters)
+	report_summary = get_report_summary(data)
+	return columns, data, None, chart, report_summary
 
 def get_columns(filters):
 	columns = [
@@ -29,7 +123,9 @@ def get_columns(filters):
 		{"label": "Weight", "fieldname": "weight", "fieldtype": "Float", "width": 120},
 		{"label": "Shelf Life", "fieldname": "shelf_life", "fieldtype": "Int", "width": 120},
 		{"label": "Lapsed Life", "fieldname": "lapsed_life", "fieldtype": "Int", "width": 120},
+		{"label": "Lapsed Days Ageing", "fieldname": "lapsed_ageing", "fieldtype": "Data", "width": 130},
 		{"label": "Balance Life", "fieldname": "balance_life", "fieldtype": "Int", "width": 120},
+		{"label": "Balance Days Ageing", "fieldname": "balance_ageing", "fieldtype": "Data", "width": 140},
 		{"label": "Status", "fieldname": "status", "fieldtype": "Data", "width": 170},
 	]
 	return columns
@@ -476,6 +572,61 @@ def get_data(filters):
     # Build final output rows
     # ---------------------------------
 
+    # ------------------------------------------------------------------
+    # Bulk prefetch — replaces per-item/per-batch/per-row lookups below.
+    # Same field values as before, just fetched in a few queries instead
+    # of tens of thousands, so the output rows are unchanged.
+    # ------------------------------------------------------------------
+    item_codes = list(iwb_map.keys())
+
+    batch_nos = set()
+    for ic in iwb_map:
+        for wh in iwb_map[ic]:
+            batch_nos.update(iwb_map[ic][wh].keys())
+    batch_nos.discard("")
+
+    item_meta = {}
+    if item_codes:
+        for it in frappe.db.sql(
+            """SELECT name, item_name, brand, `class` AS item_class,
+                      stock_uom, case_per_unit, weight_per_unit
+               FROM `tabItem` WHERE name IN %(items)s""",
+            {"items": tuple(item_codes)}, as_dict=True):
+            item_meta[it["name"]] = it
+
+    batch_meta = {}
+    if batch_nos:
+        for b in frappe.db.sql(
+            """SELECT name, manufacturing_date, expiry_date, old_batch_no
+               FROM `tabBatch` WHERE name IN %(b)s""",
+            {"b": tuple(batch_nos)}, as_dict=True):
+            batch_meta[b["name"]] = b
+
+    # Alternate-UOM conversion factor per item. For items with a single
+    # alternate UOM this is unambiguous; for the rare item with more than
+    # one, fall back to frappe.get_value to preserve its exact result.
+    conv_map = {}
+    if item_codes:
+        alt_rows = frappe.db.sql(
+            """SELECT parent, conversion_factor
+               FROM `tabUOM Conversion Detail`
+               WHERE is_alternate_uom = 1 AND parent IN %(items)s""",
+            {"items": tuple(item_codes)}, as_dict=True)
+        grouped = {}
+        for r in alt_rows:
+            grouped.setdefault(r["parent"], []).append(r["conversion_factor"])
+        for parent, vals in grouped.items():
+            if len(vals) == 1:
+                conv_map[parent] = vals[0]
+            else:
+                conv_map[parent] = frappe.get_value(
+                    "UOM Conversion Detail",
+                    {"parent": parent, "is_alternate_uom": 1},
+                    "conversion_factor",
+                )
+
+    today = getdate(frappe.utils.nowdate())
+
     data = []
 
     for item_code in sorted(iwb_map.keys()):
@@ -483,13 +634,13 @@ def get_data(filters):
         if item and item != item_code:
             continue
 
-        item_doc = frappe.get_doc("Item", item_code)
-        item_name = item_doc.item_name
-        brand_value = item_doc.brand
-        custom_class = item_doc.get("class")
-        uom = item_doc.stock_uom
-        case_per_unit = item_doc.case_per_unit
-        wt_per_unit = item_doc.weight_per_unit
+        meta = item_meta.get(item_code) or {}
+        item_name = meta.get("item_name")
+        brand_value = meta.get("brand")
+        custom_class = meta.get("item_class")
+        uom = meta.get("stock_uom")
+        case_per_unit = meta.get("case_per_unit")
+        wt_per_unit = meta.get("weight_per_unit")
 
         # Brand filter (double check)
         if brand and brand_value != brand:
@@ -510,10 +661,11 @@ def get_data(filters):
                 out_qty = qty_dict.out_qty
                 balance_qty = qty_dict.bal_qty
 
-                # Batch fields
-                mfg_date = frappe.db.get_value("Batch", batch_no, "manufacturing_date")
-                expiry_date = frappe.db.get_value("Batch", batch_no, "expiry_date")
-                old_batch_no = frappe.db.get_value("Batch", batch_no, "old_batch_no")
+                # Batch fields (prefetched)
+                bmeta = batch_meta.get(batch_no) or {}
+                mfg_date = bmeta.get("manufacturing_date")
+                expiry_date = bmeta.get("expiry_date")
+                old_batch_no = bmeta.get("old_batch_no")
 
                 # Shelf life logic
                 shelf_life = lapsed_life = balance_life = None
@@ -521,7 +673,6 @@ def get_data(filters):
 
                 if mfg_date and expiry_date:
                     shelf_life = (expiry_date - mfg_date).days
-                    today = getdate(frappe.utils.nowdate())
                     lapsed_life = (today - mfg_date).days
                     balance_life = (expiry_date - today).days
 
@@ -532,12 +683,13 @@ def get_data(filters):
                     else:
                         status = "More Than 120 Days"
 
-                # Cases
-                conv_factor = frappe.get_value(
-                    "UOM Conversion Detail",
-                    {'parent': item_code, 'is_alternate_uom': 1},
-                    'conversion_factor'
-                )
+                # Ageing buckets — computed for every row, including batches with
+                # no dates (None life -> "No Expiry Date", negative -> "Expired").
+                lapsed_ageing = get_ageing_bucket(lapsed_life)
+                balance_ageing = get_ageing_bucket(balance_life)
+
+                # Cases (conversion factor prefetched)
+                conv_factor = conv_map.get(item_code)
 
                 cases = (flt(balance_qty) / flt(conv_factor)) if conv_factor else 0
 
@@ -562,7 +714,9 @@ def get_data(filters):
                     "expiry_date": expiry_date,
                     "shelf_life": shelf_life,
                     "lapsed_life": lapsed_life,
+                    "lapsed_ageing": lapsed_ageing,
                     "balance_life": balance_life,
+                    "balance_ageing": balance_ageing,
                     "status": status,
                 })
 

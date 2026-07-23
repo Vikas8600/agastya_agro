@@ -25,7 +25,13 @@
   "to_payment_date",
   "customer_section",
   "reconcile_all_customers",
-  "customers"
+  "customers",
+  "scan_section",
+  "scan_from_date",
+  "incremental_scan",
+  "column_break_scan",
+  "last_scan_completed_on",
+  "pending_retry"
  ],
  "fields": [
   {
@@ -157,6 +163,43 @@
    "fieldtype": "Table",
    "label": "Customers",
    "options": "Auto Payment Reconciliation Customer"
+  },
+  {
+   "fieldname": "scan_section",
+   "fieldtype": "Section Break",
+   "label": "Mismatch Scan"
+  },
+  {
+   "description": "Only allocations whose <b>payment</b> is dated on or after this date are reported. No payment older than this is ever unreconciled.<br><br>The invoice a payment settles may be older, and often is \u2014 a payment received weeks ago and entered late belongs against whatever is oldest and still open. Re-linking it writes nothing into the older period: no accounting entry is created and the trial balance does not move, only which invoice the payment points at.<br><br>FIFO still reads each customer's FULL history, so the correct allocation is worked out properly. Leave blank to report everything.",
+   "fieldname": "scan_from_date",
+   "fieldtype": "Date",
+   "label": "Report Payments From"
+  },
+  {
+   "default": "1",
+   "description": "Scan only customers whose ledger changed since the last completed scan. Much faster for the nightly run. The first run after enabling this still scans everyone.",
+   "fieldname": "incremental_scan",
+   "fieldtype": "Check",
+   "label": "Incremental Scan"
+  },
+  {
+   "fieldname": "column_break_scan",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Watermark for the incremental scan. Set automatically when a scan finishes.",
+   "fieldname": "last_scan_completed_on",
+   "fieldtype": "Datetime",
+   "label": "Last Scan Completed On",
+   "read_only": 1
+  },
+  {
+   "description": "Customers that errored on the last scan. They are retried on the next run even if their ledger has not changed. Cleared automatically once they scan cleanly.",
+   "fieldname": "pending_retry",
+   "fieldtype": "Small Text",
+   "hidden": 1,
+   "label": "Pending Retry",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,

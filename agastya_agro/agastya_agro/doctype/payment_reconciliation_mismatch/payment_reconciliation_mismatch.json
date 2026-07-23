@@ -1,0 +1,328 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "hash",
+ "creation": "2026-07-20 12:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "party_section",
+  "company",
+  "customer",
+  "customer_name",
+  "column_break_1",
+  "mismatch_type",
+  "status",
+  "pair_group",
+  "invoice_section",
+  "debit_voucher_type",
+  "debit_voucher",
+  "debit_posting_date",
+  "column_break_2",
+  "debit_amount",
+  "backdated_by_days",
+  "payment_section",
+  "credit_voucher_type",
+  "credit_voucher",
+  "credit_posting_date",
+  "column_break_3",
+  "credit_amount",
+  "payment_backdated_by_days",
+  "amounts_section",
+  "actual_allocated",
+  "desired_allocated",
+  "column_break_4",
+  "difference",
+  "action_section",
+  "suggested_from_date",
+  "suggested_to_date",
+  "receivable_account",
+  "column_break_5",
+  "redo",
+  "ignore_reason",
+  "scan_section",
+  "scanned_on"
+ ],
+ "fields": [
+  {
+   "fieldname": "party_section",
+   "fieldtype": "Section Break",
+   "label": "Party"
+  },
+  {
+   "fieldname": "company",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Company",
+   "options": "Company",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "customer",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Customer",
+   "options": "Customer",
+   "read_only": 1,
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fetch_from": "customer.customer_name",
+   "fieldname": "customer_name",
+   "fieldtype": "Data",
+   "label": "Customer Name",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "mismatch_type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Mismatch Type",
+   "options": "Wrong Pairing\nMissing Allocation\nAmount Mismatch\nUnallocated Payment",
+   "read_only": 1
+  },
+  {
+   "default": "Open",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "Open\nRedo Created\nResolved\nIgnored",
+   "search_index": 1
+  },
+  {
+   "description": "Groups the two halves of one allocation move, so the amount is not counted twice.",
+   "fieldname": "pair_group",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Pair Group",
+   "read_only": 1
+  },
+  {
+   "fieldname": "invoice_section",
+   "fieldtype": "Section Break",
+   "label": "Invoice"
+  },
+  {
+   "fieldname": "debit_voucher_type",
+   "fieldtype": "Link",
+   "label": "Invoice Type",
+   "options": "DocType",
+   "read_only": 1
+  },
+  {
+   "fieldname": "debit_voucher",
+   "fieldtype": "Dynamic Link",
+   "in_list_view": 1,
+   "label": "Invoice",
+   "options": "debit_voucher_type",
+   "read_only": 1
+  },
+  {
+   "fieldname": "debit_posting_date",
+   "fieldtype": "Date",
+   "label": "Invoice Date",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "debit_amount",
+   "fieldtype": "Currency",
+   "label": "Invoice Amount",
+   "read_only": 1
+  },
+  {
+   "description": "Days between the invoice posting date and the date it was actually entered. A large value is the usual cause of a wrong allocation.",
+   "fieldname": "backdated_by_days",
+   "fieldtype": "Int",
+   "label": "Invoice Backdated By (Days)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "payment_section",
+   "fieldtype": "Section Break",
+   "label": "Payment"
+  },
+  {
+   "fieldname": "credit_voucher_type",
+   "fieldtype": "Link",
+   "label": "Payment Type",
+   "options": "DocType",
+   "read_only": 1
+  },
+  {
+   "fieldname": "credit_voucher",
+   "fieldtype": "Dynamic Link",
+   "in_list_view": 1,
+   "label": "Payment",
+   "options": "credit_voucher_type",
+   "read_only": 1
+  },
+  {
+   "fieldname": "credit_posting_date",
+   "fieldtype": "Date",
+   "label": "Payment Date",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_3",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "credit_amount",
+   "fieldtype": "Currency",
+   "label": "Payment Amount",
+   "read_only": 1
+  },
+  {
+   "fieldname": "amounts_section",
+   "fieldtype": "Section Break",
+   "label": "Allocation"
+  },
+  {
+   "fieldname": "actual_allocated",
+   "fieldtype": "Currency",
+   "label": "Actual Allocated",
+   "read_only": 1
+  },
+  {
+   "fieldname": "desired_allocated",
+   "fieldtype": "Currency",
+   "label": "Desired Allocated",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_4",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "difference",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Difference",
+   "read_only": 1
+  },
+  {
+   "fieldname": "action_section",
+   "fieldtype": "Section Break",
+   "label": "Action"
+  },
+  {
+   "fieldname": "suggested_from_date",
+   "fieldtype": "Date",
+   "label": "Suggested From Date",
+   "read_only": 1
+  },
+  {
+   "fieldname": "suggested_to_date",
+   "fieldtype": "Date",
+   "label": "Suggested To Date",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_5",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "redo",
+   "fieldtype": "Link",
+   "label": "Payment Reconciliation Redo",
+   "options": "Payment Reconciliation Redo",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.status=='Ignored'",
+   "fieldname": "ignore_reason",
+   "fieldtype": "Small Text",
+   "label": "Ignore Reason",
+   "mandatory_depends_on": "eval:doc.status=='Ignored'"
+  },
+  {
+   "fieldname": "scan_section",
+   "fieldtype": "Section Break",
+   "label": "Scan"
+  },
+  {
+   "fieldname": "scanned_on",
+   "fieldtype": "Datetime",
+   "label": "Last Scanned On",
+   "read_only": 1
+  },
+  {
+   "description": "Where this customer's balances actually sit. Copied onto the Redo so it targets the right account.",
+   "fieldname": "receivable_account",
+   "fieldtype": "Link",
+   "label": "Receivable Account",
+   "options": "Account",
+   "read_only": 1
+  },
+  {
+   "description": "Days between the payment's posting date and the day it was actually entered. A payment booked late is the usual reason an allocation went wrong: by the time it was entered, later payments had already taken the invoices it should have cleared.",
+   "fieldname": "payment_backdated_by_days",
+   "fieldtype": "Int",
+   "label": "Payment Entered Late By (Days)",
+   "read_only": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "in_create": 1,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-07-20 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Agastya Agro",
+ "name": "Payment Reconciliation Mismatch",
+ "naming_rule": "Random",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Accounts Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Accounts User",
+   "share": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}
