@@ -38,31 +38,47 @@ def get_ageing_bucket(days):
 
 
 def filter_by_ageing(rows, filters):
-	ageing_range = filters.get("ageing_range")
-	if not ageing_range:
+	# Two independent range filters, ANDed together. Either can be blank.
+	lapsed_range = filters.get("lapsed_range")
+	balance_range = filters.get("balance_range")
+	if not lapsed_range and not balance_range:
 		return rows
-	basis = filters.get("ageing_basis") or "Balance Days"
-	field = "lapsed_ageing" if basis == "Lapsed Days" else "balance_ageing"
-	return [r for r in rows if r.get(field) == ageing_range]
+
+	out = []
+	for r in rows:
+		if lapsed_range and r.get("lapsed_ageing") != lapsed_range:
+			continue
+		if balance_range and r.get("balance_ageing") != balance_range:
+			continue
+		out.append(r)
+	return out
 
 
 def get_chart(rows, filters):
-	basis = filters.get("ageing_basis") or "Balance Days"
-	field = "lapsed_ageing" if basis == "Lapsed Days" else "balance_ageing"
-
-	counts = {label: 0 for label in AGEING_ORDER}
+	# Overview: both ageing distributions side by side, over the full result set.
+	lapsed_counts = {label: 0 for label in AGEING_ORDER}
+	balance_counts = {label: 0 for label in AGEING_ORDER}
 	for r in rows:
-		bucket = r.get(field)
-		if bucket in counts:
-			counts[bucket] += 1
+		if r.get("lapsed_ageing") in lapsed_counts:
+			lapsed_counts[r["lapsed_ageing"]] += 1
+		if r.get("balance_ageing") in balance_counts:
+			balance_counts[r["balance_ageing"]] += 1
 
-	labels = [label for label in AGEING_ORDER if counts[label]]
-	values = [counts[label] for label in labels]
+	labels = [label for label in AGEING_ORDER if lapsed_counts[label] or balance_counts[label]]
+
+	chart_type = (filters.get("chart_type") or "Line").lower()
 
 	return {
-		"data": {"labels": labels, "datasets": [{"name": f"{basis} Ageing", "values": values}]},
-		"type": "bar",
+		"data": {
+			"labels": labels,
+			"datasets": [
+				{"name": "Lapsed Days", "values": [lapsed_counts[label] for label in labels]},
+				{"name": "Balance Days", "values": [balance_counts[label] for label in labels]},
+			],
+		},
+		"type": chart_type,
 		"height": 300,
+		"lineOptions": {"hideDots": 0, "regionFill": 0},
 	}
 
 
