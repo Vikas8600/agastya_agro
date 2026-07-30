@@ -158,13 +158,16 @@ def get_opening_balance(customer, company, f_date):
 
 	result = frappe.db.sql("""
 		SELECT
-			COALESCE(SUM(debit), 0) - COALESCE(SUM(credit), 0) as opening
-		FROM `tabGL Entry`
-		WHERE party_type = 'Customer'
-		AND party = %s
-		AND company = %s
-		AND posting_date < %s
-		AND is_cancelled = 0
+			COALESCE(SUM(gl.debit), 0) - COALESCE(SUM(gl.credit), 0) as opening
+		FROM `tabGL Entry` gl
+		LEFT JOIN `tabJournal Entry` jv ON gl.voucher_type = 'Journal Entry'
+			AND gl.voucher_no = jv.name
+		WHERE gl.party_type = 'Customer'
+		AND gl.party = %s
+		AND gl.company = %s
+		AND gl.posting_date < %s
+		AND gl.is_cancelled = 0
+		AND (gl.voucher_type != 'Journal Entry' OR IFNULL(jv.custom_is_bounced_cheque, 0) = 0)
 	""", (customer, company, f_date), as_dict=True)
 
 	return flt(result[0].opening) if result else 0
@@ -199,7 +202,7 @@ def get_receivables(customer, company, f_date, t_date):
 		LEFT JOIN `tabJournal Entry` jv ON gl.voucher_type = 'Journal Entry'
 			AND gl.voucher_no = jv.name
 		{conditions}
-		AND (gl.voucher_type != 'Journal Entry' OR IFNULL(jv.is_system_generated, 0) = 0)
+		AND (gl.voucher_type != 'Journal Entry' OR (IFNULL(jv.is_system_generated, 0) = 0 AND IFNULL(jv.custom_is_bounced_cheque, 0) = 0))
 		ORDER BY gl.posting_date ASC, gl.creation ASC
 	""".format(conditions=conditions), params, as_dict=True)
 
@@ -234,7 +237,7 @@ def get_credit_entries(customer, company, f_date, t_date):
 		LEFT JOIN `tabJournal Entry` jv ON gl.voucher_type = 'Journal Entry'
 			AND gl.voucher_no = jv.name
 		{conditions}
-		AND (gl.voucher_type != 'Journal Entry' OR IFNULL(jv.is_system_generated, 0) = 0)
+		AND (gl.voucher_type != 'Journal Entry' OR (IFNULL(jv.is_system_generated, 0) = 0 AND IFNULL(jv.custom_is_bounced_cheque, 0) = 0))
 		ORDER BY gl.posting_date ASC, gl.creation ASC
 	""".format(conditions=conditions), params, as_dict=True)
 
