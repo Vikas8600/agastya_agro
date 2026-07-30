@@ -1,0 +1,26 @@
+{
+ "content": null,
+ "creation": "2026-07-30 16:37:02.249566",
+ "docstatus": 0,
+ "doctype": "Page",
+ "idx": 0,
+ "modified": "2026-07-30 16:40:23.404134",
+ "modified_by": "Administrator",
+ "module": "Agastya Agro",
+ "name": "ld-explaination",
+ "owner": "Administrator",
+ "page_name": "ld-explaination",
+ "roles": [
+  {
+   "role": "System Manager"
+  },
+  {
+   "role": "Leadership Dashboard"
+  }
+ ],
+ "script": null,
+ "standard": "Yes",
+ "style": null,
+ "system_page": 0,
+ "title": "Leadership Dashboard Explained"
+}

@@ -130,6 +130,10 @@ doc_events = {
 scheduler_events = {
 	"daily_long": [
 		"agastya_agro.agastya_agro.reconciliation.mismatch_scan.scan_reconciliation_mismatches"
+	],
+	"hourly_long": [
+		"agastya_agro.api.leadership_dashboard.compute_ageing_cache",
+		"agastya_agro.api.leadership_dashboard.compute_debtors_cache"
 	]
 }
 
