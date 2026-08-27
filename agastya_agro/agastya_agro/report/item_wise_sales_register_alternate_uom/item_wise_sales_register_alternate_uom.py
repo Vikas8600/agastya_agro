@@ -5,14 +5,8 @@
 import frappe
 from frappe import _
 from frappe.model.meta import get_field_precision
-from frappe.utils import cstr, flt
+from frappe.utils import cstr, date_diff, flt, formatdate
 from frappe.utils.xlsxutils import handle_html
-
-from erpnext.accounts.report.sales_register.sales_register import get_mode_of_payments
-from erpnext.selling.report.item_wise_sales_history.item_wise_sales_history import (
-	get_customer_details,
-	get_item_details,
-)
 
 
 def execute(filters=None):
@@ -25,11 +19,12 @@ def _execute(filters=None, additional_table_columns=None, additional_query_colum
 	company_currency = frappe.get_cached_value('Company',  filters.get('company'),  'default_currency')
 
 	item_list = get_items(filters, additional_query_columns)
-	if item_list:
-		itemised_tax, tax_columns = get_tax_accounts(item_list, columns, company_currency)
+	if not item_list:
+		return columns, [], None, None, None, 0
 
-	mode_of_payments = get_mode_of_payments(set(d.parent for d in item_list))
+	itemised_tax, tax_columns = get_tax_accounts(item_list, columns, company_currency)
 	so_dn_map = get_delivery_notes_against_sales_order(item_list)
+	refs = get_reference_maps(item_list)
 
 	data = []
 	total_row_map = {}
@@ -39,12 +34,9 @@ def _execute(filters=None, additional_table_columns=None, additional_query_colum
 	if filters.get('group_by'):
 		grand_total = get_grand_total(filters, 'Sales Invoice')
 
-	customer_details = get_customer_details()
-	item_details = get_item_details()
-
 	for d in item_list:
-		customer_record = customer_details.get(d.customer)
-		item_record = item_details.get(d.item_code)
+		customer_record = refs.customers.get(d.customer) or frappe._dict()
+		item_record = refs.item_docs.get(d.item_code) or frappe._dict()
 
 		delivery_note = None
 		if d.delivery_note:
@@ -70,37 +62,24 @@ def _execute(filters=None, additional_table_columns=None, additional_query_colum
 			else:  # Jan to March
 				fiscal_year = f"{str(year - 1)[-2:]}-{str(year)[-2:]}"
 
-		# Get return invoice date
-		return_inv_date = None
+		# Get return invoice date, and how long after it the return was raised
 		return_against = d.return_against
-		if return_against:
-			return_inv_date = frappe.db.get_value("Sales Invoice", return_against, "posting_date")
+		return_inv_date = refs.return_dates.get(return_against) if return_against else None
+		return_invoice_days = date_diff(posting_date, return_inv_date) if (posting_date and return_inv_date) else None
 
 		# Get batch details
-		mfg_date = None
-		exp_date = None
-		old_batch_no = None
-		if d.batch_no:
-			batch_details = frappe.db.get_value("Batch", d.batch_no,
-				["manufacturing_date", "expiry_date", "old_batch_no"], as_dict=True)
-			if batch_details:
-				mfg_date = batch_details.get("manufacturing_date")
-				exp_date = batch_details.get("expiry_date")
-				old_batch_no = batch_details.get("old_batch_no")
+		batch_details = refs.batches.get(d.batch_no) or frappe._dict()
+		mfg_date = batch_details.get("manufacturing_date")
+		exp_date = batch_details.get("expiry_date")
+		old_batch_no = batch_details.get("old_batch_no")
 
 		# Get item details
-		item_values = frappe.get_value("Item", d.item_code,
-			["weight_per_unit", "brand", "class"], as_dict=True) or {}
-		weight_per_unit = item_values.get("weight_per_unit") or 0
-		brand = item_values.get("brand") or ""
-		item_class = item_values.get("class") or ""
+		weight_per_unit = item_record.get("weight_per_unit") or 0
+		brand = item_record.get("brand") or ""
+		item_class = item_record.get("item_class") or ""
 
 		# Get conversion factor for cases
-		conv_factor = frappe.get_value(
-			"UOM Conversion Detail",
-			{'parent': d.item_code, 'is_alternate_uom': 1},
-			'conversion_factor'
-		)
+		conv_factor = refs.conv_factors.get(d.item_code)
 		cases = (flt(d.stock_qty) / flt(conv_factor)) if conv_factor else 0
 		weight = flt(d.stock_qty) * flt(weight_per_unit)
 
@@ -109,30 +88,53 @@ def _execute(filters=None, additional_table_columns=None, additional_query_colum
 		if d.invoice_discount_amount and d.base_net_total:
 			distributed_discount = (flt(d.base_net_amount) / flt(d.base_net_total)) * flt(d.invoice_discount_amount)
 
+		# Pincode falls back to the billing address when no shipping address is set
+		pincode = refs.pincodes.get(d.shipping_address_name) or refs.pincodes.get(d.customer_address) or ""
+
+		# Payment vouchers settled against this invoice
+		voucher = refs.vouchers.get(d.parent) or frappe._dict()
+
 		row = {
 			'year': fiscal_year,
 			'customer': d.customer,
-			'customer_name': customer_record.customer_name if customer_record else d.customer_name,
-			'customer_group': customer_record.customer_group if customer_record else d.customer_group,
+			'customer_name': customer_record.get("customer_name") or d.customer_name,
+			'city': customer_record.get("city") or "",
+			'customer_group': customer_record.get("customer_group") or d.customer_group,
 			'territory': d.territory,
+			'sales_person': customer_record.get("sales_person") or "",
+			'parent_sales_person': customer_record.get("parent_sales_person") or "",
+			'posting_date': d.posting_date,
+			'month': month,
+			'ack_no': d.ack_no or refs.ack_nos.get(d.parent),
+			'ewaybill': d.ewaybill,
+			'irn': d.irn,
+			'tax_id': d.tax_id,
+			'transporter': d.transporter,
+			'transporter_name': d.transporter_name,
+			'gst_transporter_id': d.gst_transporter_id,
+			'gst_vehicle_type': d.gst_vehicle_type,
+			'vehicle_no': d.vehicle_no,
+			'mode_of_transport': d.mode_of_transport,
+			'destination': d.custom_destination,
+			'pincode': pincode,
+			'distance': d.distance,
 			'sales_order': d.sales_order,
 			'delivery_note': delivery_note,
-			'posting_date': d.posting_date,
 			'invoice': d.parent,
-			'month': month,
-			'posting_year': posting_year,
 			'return_invoice': return_against,
 			'return_inv_date': return_inv_date,
+			'return_invoice_days': return_invoice_days,
 			'price_list_name': d.selling_price_list,
 			'item_code': d.item_code,
-			'item_name': item_record.item_name if item_record else d.item_name,
+			'item_name': item_record.get("item_name") or d.item_name,
 			'brand': brand,
 			'item_class': item_class,
-			'item_group': item_record.item_group if item_record else d.item_group,
+			'item_group': item_record.get("item_group") or d.item_group,
 			'mfg_date': mfg_date,
 			'exp_date': exp_date,
 			'batch_no': d.batch_no,
 			'old_batch_no': old_batch_no,
+			'cost_center': d.cost_center,
 			'stock_qty': d.stock_qty,
 			'weight': weight,
 			'cases': cases,
@@ -143,7 +145,14 @@ def _execute(filters=None, additional_table_columns=None, additional_query_colum
 			'additional_discount_percentage': d.additional_discount_percentage,
 			'additional_discount_amount': d.invoice_discount_amount,
 			'net_rate': d.item_net_rate,
-			'cost_center': d.cost_center,
+			'posting_year': posting_year,
+			'invoice_type': 'Returns' if d.is_return else 'Sales',
+			'collection_days': (date_diff(voucher.get("collected_on"), posting_date)
+				if (voucher.get("collected_on") and posting_date) else None),
+			'payment_reference': voucher.get("references") or "",
+			'payment_date': voucher.get("dates") or "",
+			'voucher_amount': voucher.get("amount") or 0,
+			'voucher_type': voucher.get("types") or "",
 		}
 
 		if additional_query_columns:
@@ -162,6 +171,18 @@ def _execute(filters=None, additional_table_columns=None, additional_query_colum
 				'rate': d.base_net_rate,
 				'amount': d.base_net_amount
 			})
+
+		# NRV block -- nrv is the "NRV Price" field maintained on the invoice item.
+		# Items with no NRV maintained (packing material, etc.) leave the whole
+		# block at zero rather than reporting the full rate as cushion.
+		nrv_price = flt(d.nrv)
+		diff_price = (flt(row['rate']) - nrv_price) if nrv_price else 0
+		row.update({
+			'nrv_price': nrv_price,
+			'diff_price': diff_price,
+			'cushion': flt(d.stock_qty) * diff_price,
+			'nrv_sales': flt(d.stock_qty) * nrv_price,
+		})
 
 		total_tax = 0
 		for tax in tax_columns:
@@ -187,7 +208,7 @@ def _execute(filters=None, additional_table_columns=None, additional_query_colum
 
 		data.append(row)
 
-	if filters.get('group_by') and item_list:
+	if filters.get('group_by'):
 		total_row = total_row_map.get(prev_group_by_value or d.get('item_name'))
 		total_row['percent_gt'] = flt(total_row['total']/grand_total * 100)
 		data.append(total_row)
@@ -196,278 +217,201 @@ def _execute(filters=None, additional_table_columns=None, additional_query_colum
 		data.append(total_row_map.get('total_row'))
 		skip_total_row = 1
 
-	# Add city and sales person data to rows
-	for d in data:
-		if d.get("customer"):
-			d["city"] = frappe.db.get_value("Customer", d["customer"], "city") or ""
-
-			sales_persons = frappe.db.get_all("Sales Team",
-											filters={"parent": d["customer"]},
-											fields=["sales_person", "parent_sales_person"])
-			if sales_persons:
-				d["sales_person"] = ", ".join([sp.get("sales_person") or "" for sp in sales_persons if sp.get("sales_person")])
-				d["parent_sales_person"] = ", ".join([sp.get("parent_sales_person") or "" for sp in sales_persons if sp.get("parent_sales_person")])
-			else:
-				d["sales_person"] = ""
-				d["parent_sales_person"] = ""
-
 	return columns, data, None, None, None, skip_total_row
 
+def get_reference_maps(item_list):
+	"""Pre-fetch every lookup the row loop needs, one query per doctype.
+
+	Doing these inside the loop costs six round trips per invoice item, which is
+	what made the report unusable over a full year.
+	"""
+	customers = {d.customer for d in item_list if d.customer}
+	items = {d.item_code for d in item_list if d.item_code}
+	batches = {d.batch_no for d in item_list if d.batch_no}
+	returns = {d.return_against for d in item_list if d.return_against}
+	invoices = {d.parent for d in item_list}
+	addresses = {a for d in item_list for a in (d.shipping_address_name, d.customer_address) if a}
+
+	refs = frappe._dict({
+		'customers': {}, 'item_docs': {}, 'batches': {}, 'return_dates': {},
+		'conv_factors': {}, 'pincodes': {}, 'vouchers': {}, 'ack_nos': {},
+	})
+
+	if customers:
+		for c in frappe.db.sql("""
+			select name, customer_name, customer_group, city
+			from `tabCustomer` where name in %(customers)s
+		""", {'customers': tuple(customers)}, as_dict=1):
+			refs.customers[c.name] = c
+
+		# Sales Team rows hang off the Customer; collapse them the same way the
+		# report used to, but in a single pass.
+		team = {}
+		for t in frappe.db.sql("""
+			select parent, sales_person, parent_sales_person
+			from `tabSales Team` where parenttype='Customer' and parent in %(customers)s
+			order by idx
+		""", {'customers': tuple(customers)}, as_dict=1):
+			team.setdefault(t.parent, []).append(t)
+
+		for name, rows in team.items():
+			customer = refs.customers.setdefault(name, frappe._dict({'name': name}))
+			customer.sales_person = ", ".join([r.sales_person for r in rows if r.sales_person])
+			customer.parent_sales_person = ", ".join([r.parent_sales_person for r in rows if r.parent_sales_person])
+
+	if items:
+		for i in frappe.db.sql("""
+			select name, item_name, item_group, brand, weight_per_unit, `class` as item_class
+			from `tabItem` where name in %(items)s
+		""", {'items': tuple(items)}, as_dict=1):
+			refs.item_docs[i.name] = i
+
+		for u in frappe.db.sql("""
+			select parent, conversion_factor from `tabUOM Conversion Detail`
+			where parenttype='Item' and is_alternate_uom=1 and parent in %(items)s
+		""", {'items': tuple(items)}, as_dict=1):
+			refs.conv_factors.setdefault(u.parent, u.conversion_factor)
+
+	if batches:
+		for b in frappe.db.sql("""
+			select name, manufacturing_date, expiry_date, old_batch_no
+			from `tabBatch` where name in %(batches)s
+		""", {'batches': tuple(batches)}, as_dict=1):
+			refs.batches[b.name] = b
+
+	if returns:
+		for r in frappe.db.sql("""
+			select name, posting_date from `tabSales Invoice` where name in %(returns)s
+		""", {'returns': tuple(returns)}, as_dict=1):
+			refs.return_dates[r.name] = r.posting_date
+
+	if addresses:
+		for a in frappe.db.sql("""
+			select name, pincode from `tabAddress`
+			where name in %(addresses)s and ifnull(pincode, '') != ''
+		""", {'addresses': tuple(addresses)}, as_dict=1):
+			refs.pincodes[a.name] = a.pincode
+
+	if invoices:
+		# Sales Invoice.ack_no stopped being written after 2023; the acknowledgement
+		# number lives on the e-Invoice Log. Keyed off reference_name because that
+		# column is indexed -- looking it up by IRN is twice as slow.
+		for e in frappe.db.sql("""
+			select reference_name, acknowledgement_number from `tabe-Invoice Log`
+			where reference_doctype = 'Sales Invoice' and reference_name in %(invoices)s
+				and ifnull(acknowledgement_number, '') != ''
+		""", {'invoices': tuple(invoices)}, as_dict=1):
+			refs.ack_nos[e.reference_name] = e.acknowledgement_number
+
+	if invoices:
+		# is_cash marks a real bank/cash receipt. Journal Entries carry their own
+		# voucher_type (Credit Note, Bank Entry, ...) which is what the register wants
+		# to show -- 'Journal Entry' alone hides a scheme credit behind a payment.
+		vouchers = frappe.db.sql("""
+			select per.reference_name as invoice, 'Payment Entry' as voucher_type,
+				per.allocated_amount as amount, pe.posting_date as voucher_date,
+				pe.reference_no as reference_no, 1 as is_cash
+			from `tabPayment Entry Reference` per
+			inner join `tabPayment Entry` pe on pe.name = per.parent
+			where per.docstatus = 1 and per.reference_doctype = 'Sales Invoice'
+				and per.reference_name in %(invoices)s
+			union all
+			select jea.reference_name as invoice, je.voucher_type as voucher_type,
+				(jea.credit - jea.debit) as amount, je.posting_date as voucher_date,
+				je.cheque_no as reference_no, 0 as is_cash
+			from `tabJournal Entry Account` jea
+			inner join `tabJournal Entry` je on je.name = jea.parent
+			where jea.docstatus = 1 and jea.reference_type = 'Sales Invoice'
+				and jea.reference_name in %(invoices)s
+		""", {'invoices': tuple(invoices)}, as_dict=1)
+
+		for v in vouchers:
+			entry = refs.vouchers.setdefault(v.invoice,
+				frappe._dict({'amount': 0, 'rows': [], 'collected_on': None}))
+			entry.amount += flt(v.amount)
+			entry.rows.append(v)
+			# Collection days measures money in, so credit notes and other journal
+			# adjustments do not count as a collection.
+			if v.is_cash and v.voucher_date and (not entry.collected_on or v.voucher_date > entry.collected_on):
+				entry.collected_on = v.voucher_date
+
+		for entry in refs.vouchers.values():
+			# keep reference numbers, dates and types positionally aligned
+			rows = sorted(entry.rows, key=lambda r: (r.voucher_date is None, r.voucher_date or ''))
+			entry.types = ", ".join(dict.fromkeys(r.voucher_type for r in rows if r.voucher_type))
+			entry.references = ", ".join(r.reference_no for r in rows if r.reference_no)
+			entry.dates = ", ".join(formatdate(r.voucher_date) for r in rows if r.voucher_date)
+
+	return refs
+
 def get_columns(additional_table_columns, filters):
+	# Ordered to match the Sales Register format sheet (columns A -> BM).
 	columns = [
-		{
-			'label': _('Year'),
-			'fieldname': 'year',
-			'fieldtype': 'Data',
-			'width': 80
-		},
-		{
-			'label': _('Customer Code'),
-			'fieldname': 'customer',
-			'fieldtype': 'Link',
-			'options': 'Customer',
-			'width': 120
-		},
-		{
-			'label': _('Customer Name'),
-			'fieldname': 'customer_name',
-			'fieldtype': 'Data',
-			'width': 150
-		},
-		{
-			'label': _('City'),
-			'fieldname': 'city',
-			'fieldtype': 'Data',
-			'width': 100
-		},
-		{
-			'label': _('Cust Group'),
-			'fieldname': 'customer_group',
-			'fieldtype': 'Link',
-			'options': 'Customer Group',
-			'width': 120
-		},
-		{
-			'label': _('Territory'),
-			'fieldname': 'territory',
-			'fieldtype': 'Link',
-			'options': 'Territory',
-			'width': 100
-		},
-		{
-			'label': _('Sales Person'),
-			'fieldname': 'sales_person',
-			'fieldtype': 'Data',
-			'width': 120
-		},
-		{
-			'label': _('Parent Sales Person'),
-			'fieldname': 'parent_sales_person',
-			'fieldtype': 'Data',
-			'width': 120
-		},
-		{
-			'label': _('Sale Order'),
-			'fieldname': 'sales_order',
-			'fieldtype': 'Link',
-			'options': 'Sales Order',
-			'width': 120
-		},
-		{
-			'label': _('Delivery Challan'),
-			'fieldname': 'delivery_note',
-			'fieldtype': 'Link',
-			'options': 'Delivery Note',
-			'width': 120
-		},
-		{
-			'label': _('Posting Date'),
-			'fieldname': 'posting_date',
-			'fieldtype': 'Date',
-			'width': 100
-		},
-		{
-			'label': _('Invoice Number'),
-			'fieldname': 'invoice',
-			'fieldtype': 'Link',
-			'options': 'Sales Invoice',
-			'width': 120
-		},
-		{
-			'label': _('Month'),
-			'fieldname': 'month',
-			'fieldtype': 'Data',
-			'width': 80
-		},
-		{
-			'label': _('Posting Year'),
-			'fieldname': 'posting_year',
-			'fieldtype': 'Data',
-			'width': 80
-		},
-		{
-			'label': _('Return Against Invoice'),
-			'fieldname': 'return_invoice',
-			'fieldtype': 'Link',
-			'options': 'Sales Invoice',
-			'width': 140
-		},
-		{
-			'label': _('Return Inv Date'),
-			'fieldname': 'return_inv_date',
-			'fieldtype': 'Date',
-			'width': 100
-		},
-		{
-			'label': _('Price List Name'),
-			'fieldname': 'price_list_name',
-			'fieldtype': 'Link',
-			'options': 'Price List',
-			'width': 120
-		},
-		{
-			'label': _('Item Code'),
-			'fieldname': 'item_code',
-			'fieldtype': 'Link',
-			'options': 'Item',
-			'width': 120
-		},
-		{
-			'label': _('Item Name'),
-			'fieldname': 'item_name',
-			'fieldtype': 'Data',
-			'width': 150
-		},
-		{
-			'label': _('Brand'),
-			'fieldname': 'brand',
-			'fieldtype': 'Data',
-			'width': 100
-		},
-		{
-			'label': _('Class'),
-			'fieldname': 'item_class',
-			'fieldtype': 'Data',
-			'width': 100
-		},
-		{
-			'label': _('Item Group'),
-			'fieldname': 'item_group',
-			'fieldtype': 'Link',
-			'options': 'Item Group',
-			'width': 120
-		},
-		{
-			'label': _('MFG Date'),
-			'fieldname': 'mfg_date',
-			'fieldtype': 'Date',
-			'width': 100
-		},
-		{
-			'label': _('Exp Date'),
-			'fieldname': 'exp_date',
-			'fieldtype': 'Date',
-			'width': 100
-		},
-		{
-			'label': _('Batch No'),
-			'fieldname': 'batch_no',
-			'fieldtype': 'Link',
-			'options': 'Batch',
-			'width': 120
-		},
-		{
-			'label': _('Old Batch No'),
-			'fieldname': 'old_batch_no',
-			'fieldtype': 'Data',
-			'width': 120
-		},
-		{
-			'label': _('Stock Qty'),
-			'fieldname': 'stock_qty',
-			'fieldtype': 'Float',
-			'width': 100
-		},
-		{
-			'label': _('Weight'),
-			'fieldname': 'weight',
-			'fieldtype': 'Float',
-			'width': 100
-		},
-		{
-			'label': _('Cases'),
-			'fieldname': 'cases',
-			'fieldtype': 'Float',
-			'width': 100
-		},
-		{
-			'label': _('Price List Rate'),
-			'fieldname': 'price_list_rate',
-			'fieldtype': 'Currency',
-			'options': 'currency',
-			'width': 120
-		},
-		{
-			'label': _('Discount (%) on Price List Rate with Margin'),
-			'fieldname': 'discount_percentage',
-			'fieldtype': 'Float',
-			'width': 150
-		},
-		{
-			'label': _('Discount Amount'),
-			'fieldname': 'discount_amount',
-			'fieldtype': 'Currency',
-			'options': 'currency',
-			'width': 120
-		},
-		{
-			'label': _('Distributed Discount Amount'),
-			'fieldname': 'distributed_discount_amount',
-			'fieldtype': 'Currency',
-			'options': 'currency',
-			'width': 150
-		},
-		{
-			'label': _('Additional Discount Percentage'),
-			'fieldname': 'additional_discount_percentage',
-			'fieldtype': 'Float',
-			'width': 150
-		},
-		{
-			'label': _('Additional Discount Amount INR'),
-			'fieldname': 'additional_discount_amount',
-			'fieldtype': 'Currency',
-			'options': 'currency',
-			'width': 150
-		},
-		{
-			'label': _('Rate'),
-			'fieldname': 'rate',
-			'fieldtype': 'Currency',
-			'options': 'currency',
-			'width': 100
-		},
-		{
-			'label': _('Net Rate'),
-			'fieldname': 'net_rate',
-			'fieldtype': 'Currency',
-			'options': 'currency',
-			'width': 100
-		},
-		{
-			'label': _('Amount'),
-			'fieldname': 'amount',
-			'fieldtype': 'Currency',
-			'options': 'currency',
-			'width': 100
-		},
-		{
-			'label': _('Cost Center'),
-			'fieldname': 'cost_center',
-			'fieldtype': 'Link',
-			'options': 'Cost Center',
-			'width': 120
-		}
+		{'label': _('Year'), 'fieldname': 'year', 'fieldtype': 'Data', 'width': 80},
+		{'label': _('Code'), 'fieldname': 'customer', 'fieldtype': 'Link', 'options': 'Customer', 'width': 120},
+		{'label': _('Name Of The Party'), 'fieldname': 'customer_name', 'fieldtype': 'Data', 'width': 180},
+		{'label': _('City'), 'fieldname': 'city', 'fieldtype': 'Data', 'width': 100},
+		{'label': _('Customer Group'), 'fieldname': 'customer_group', 'fieldtype': 'Link', 'options': 'Customer Group', 'width': 120},
+		{'label': _('Territory'), 'fieldname': 'territory', 'fieldtype': 'Link', 'options': 'Territory', 'width': 100},
+		{'label': _('Sales Person'), 'fieldname': 'sales_person', 'fieldtype': 'Data', 'width': 140},
+		{'label': _('Parent Sales Person'), 'fieldname': 'parent_sales_person', 'fieldtype': 'Data', 'width': 140},
+		{'label': _('Posting Date'), 'fieldname': 'posting_date', 'fieldtype': 'Date', 'width': 100},
+		{'label': _('Month'), 'fieldname': 'month', 'fieldtype': 'Data', 'width': 90},
+		{'label': _('E-Invoice Number'), 'fieldname': 'ack_no', 'fieldtype': 'Data', 'width': 140},
+		{'label': _('E-Way Bill Number'), 'fieldname': 'ewaybill', 'fieldtype': 'Data', 'width': 140},
+		{'label': _('IRN'), 'fieldname': 'irn', 'fieldtype': 'Data', 'width': 160},
+		{'label': _('Tax ID'), 'fieldname': 'tax_id', 'fieldtype': 'Data', 'width': 120},
+		{'label': _('Transporter'), 'fieldname': 'transporter', 'fieldtype': 'Link', 'options': 'Supplier', 'width': 120},
+		{'label': _('Transporter Name'), 'fieldname': 'transporter_name', 'fieldtype': 'Data', 'width': 160},
+		{'label': _('GST Transporter ID'), 'fieldname': 'gst_transporter_id', 'fieldtype': 'Data', 'width': 140},
+		{'label': _('GST Vehicle Type'), 'fieldname': 'gst_vehicle_type', 'fieldtype': 'Data', 'width': 120},
+		{'label': _('Vehicle No'), 'fieldname': 'vehicle_no', 'fieldtype': 'Data', 'width': 110},
+		{'label': _('Mode of Transport'), 'fieldname': 'mode_of_transport', 'fieldtype': 'Data', 'width': 130},
+		{'label': _('Destination'), 'fieldname': 'destination', 'fieldtype': 'Data', 'width': 130},
+		{'label': _('Pincode'), 'fieldname': 'pincode', 'fieldtype': 'Data', 'width': 90},
+		{'label': _('Distance (in km)'), 'fieldname': 'distance', 'fieldtype': 'Float', 'width': 110},
+		{'label': _('Sale Order'), 'fieldname': 'sales_order', 'fieldtype': 'Link', 'options': 'Sales Order', 'width': 140},
+		{'label': _('Delivery Challan'), 'fieldname': 'delivery_note', 'fieldtype': 'Link', 'options': 'Delivery Note', 'width': 140},
+		{'label': _('Invoice Number'), 'fieldname': 'invoice', 'fieldtype': 'Link', 'options': 'Sales Invoice', 'width': 140},
+		{'label': _('Return Against Invoice'), 'fieldname': 'return_invoice', 'fieldtype': 'Link', 'options': 'Sales Invoice', 'width': 150},
+		{'label': _('Return Inv Date'), 'fieldname': 'return_inv_date', 'fieldtype': 'Date', 'width': 110},
+		{'label': _('Ret.Invoice Days'), 'fieldname': 'return_invoice_days', 'fieldtype': 'Int', 'width': 120},
+		{'label': _('Price List Name'), 'fieldname': 'price_list_name', 'fieldtype': 'Link', 'options': 'Price List', 'width': 160},
+		{'label': _('Item Code'), 'fieldname': 'item_code', 'fieldtype': 'Link', 'options': 'Item', 'width': 160},
+		{'label': _('Item Name'), 'fieldname': 'item_name', 'fieldtype': 'Data', 'width': 180},
+		{'label': _('Brand'), 'fieldname': 'brand', 'fieldtype': 'Data', 'width': 110},
+		{'label': _('Class'), 'fieldname': 'item_class', 'fieldtype': 'Data', 'width': 100},
+		{'label': _('Item Group'), 'fieldname': 'item_group', 'fieldtype': 'Link', 'options': 'Item Group', 'width': 130},
+		{'label': _('MFG Date'), 'fieldname': 'mfg_date', 'fieldtype': 'Date', 'width': 100},
+		{'label': _('Exp Date'), 'fieldname': 'exp_date', 'fieldtype': 'Date', 'width': 100},
+		{'label': _('Batch No'), 'fieldname': 'batch_no', 'fieldtype': 'Link', 'options': 'Batch', 'width': 130},
+		{'label': _('Old Batch No'), 'fieldname': 'old_batch_no', 'fieldtype': 'Data', 'width': 130},
+		{'label': _('Cost Center'), 'fieldname': 'cost_center', 'fieldtype': 'Link', 'options': 'Cost Center', 'width': 140},
+		{'label': _('Stock Qty'), 'fieldname': 'stock_qty', 'fieldtype': 'Float', 'width': 100},
+		{'label': _('Weight'), 'fieldname': 'weight', 'fieldtype': 'Float', 'width': 100},
+		{'label': _('Cases'), 'fieldname': 'cases', 'fieldtype': 'Float', 'width': 90},
+		{'label': _('Price List Rate'), 'fieldname': 'price_list_rate', 'fieldtype': 'Currency', 'options': 'currency', 'width': 120},
+		{'label': _('Disc.%'), 'fieldname': 'discount_percentage', 'fieldtype': 'Float', 'width': 90},
+		{'label': _('Disc.%,Price'), 'fieldname': 'discount_amount', 'fieldtype': 'Currency', 'options': 'currency', 'width': 120},
+		{'label': _('Disc.%,Price.Amnt'), 'fieldname': 'distributed_discount_amount', 'fieldtype': 'Currency', 'options': 'currency', 'width': 140},
+		{'label': _('Addnl.%'), 'fieldname': 'additional_discount_percentage', 'fieldtype': 'Float', 'width': 90},
+		{'label': _('Addnl.Disc.Amnt'), 'fieldname': 'additional_discount_amount', 'fieldtype': 'Currency', 'options': 'currency', 'width': 130},
+		{'label': _('Rate'), 'fieldname': 'rate', 'fieldtype': 'Currency', 'options': 'currency', 'width': 110},
+		{'label': _('Net Rate'), 'fieldname': 'net_rate', 'fieldtype': 'Currency', 'options': 'currency', 'width': 110},
+		{'label': _('NRV Price'), 'fieldname': 'nrv_price', 'fieldtype': 'Currency', 'options': 'currency', 'width': 110},
+		{'label': _('Diff.Price'), 'fieldname': 'diff_price', 'fieldtype': 'Currency', 'options': 'currency', 'width': 110},
+		{'label': _('Cushion'), 'fieldname': 'cushion', 'fieldtype': 'Currency', 'options': 'currency', 'width': 110},
+		{'label': _('NRV Sales'), 'fieldname': 'nrv_sales', 'fieldtype': 'Currency', 'options': 'currency', 'width': 120},
+		{'label': _('Amount'), 'fieldname': 'amount', 'fieldtype': 'Currency', 'options': 'currency', 'width': 120},
+		{'label': _('Total Tax'), 'fieldname': 'total_tax', 'fieldtype': 'Currency', 'options': 'currency', 'width': 110},
+		{'label': _('Total'), 'fieldname': 'total', 'fieldtype': 'Currency', 'options': 'currency', 'width': 120},
+		{'label': _('Type'), 'fieldname': 'invoice_type', 'fieldtype': 'Data', 'width': 90},
+		{'label': _('Invoice Vs Collection Days'), 'fieldname': 'collection_days', 'fieldtype': 'Int', 'width': 170},
+		{'label': _('Payment reference Number'), 'fieldname': 'payment_reference', 'fieldtype': 'Data', 'width': 220},
+		{'label': _('Payment Date'), 'fieldname': 'payment_date', 'fieldtype': 'Data', 'width': 150},
+		{'label': _('Voucher Amount'), 'fieldname': 'voucher_amount', 'fieldtype': 'Currency', 'options': 'currency', 'width': 130},
+		{'label': _('Voucher Type'), 'fieldname': 'voucher_type', 'fieldtype': 'Data', 'width': 130},
+		{'label': _('Posting Year'), 'fieldname': 'posting_year', 'fieldtype': 'Data', 'width': 90},
 	]
 
 	if additional_table_columns:
@@ -510,7 +454,9 @@ def get_conditions(filters):
 		conditions +=  """and ifnull(`tabSales Invoice Item`.item_group, '') = %(item_group)s"""
 
 	if not filters.get("group_by"):
-		conditions += "ORDER BY `tabSales Invoice`.posting_date desc, `tabSales Invoice Item`.item_group desc"
+		# `name` breaks ties so repeated runs (and exports) keep the same row order
+		conditions += ("ORDER BY `tabSales Invoice`.posting_date desc,"
+			" `tabSales Invoice Item`.item_group desc, `tabSales Invoice Item`.name")
 	else:
 		conditions += get_group_by_conditions(filters, 'Sales Invoice')
 
@@ -560,6 +506,14 @@ def get_items(filters, additional_query_columns):
 			`tabSales Invoice Item`.rate as item_rate,
 			`tabSales Invoice Item`.net_rate as item_net_rate,
 			`tabSales Invoice Item`.base_rate,
+			`tabSales Invoice Item`.nrv,
+			`tabSales Invoice`.ack_no, `tabSales Invoice`.ewaybill, `tabSales Invoice`.irn,
+			`tabSales Invoice`.tax_id, `tabSales Invoice`.transporter,
+			`tabSales Invoice`.transporter_name, `tabSales Invoice`.gst_transporter_id,
+			`tabSales Invoice`.gst_vehicle_type, `tabSales Invoice`.vehicle_no,
+			`tabSales Invoice`.mode_of_transport, `tabSales Invoice`.custom_destination,
+			`tabSales Invoice`.distance, `tabSales Invoice`.shipping_address_name,
+			`tabSales Invoice`.customer_address, `tabSales Invoice`.is_return,
 			`tabSales Invoice Item`.base_amount {0}
 		from `tabSales Invoice`, `tabSales Invoice Item`
 		where `tabSales Invoice`.name = `tabSales Invoice Item`.parent
@@ -694,29 +648,13 @@ def get_tax_accounts(item_list, columns, company_currency,
 			'width': 100
 		})
 
-	columns += [
-		{
-			'label': _('Total Tax'),
-			'fieldname': 'total_tax',
-			'fieldtype': 'Currency',
-			'options': 'currency',
-			'width': 100
-		},
-		{
-			'label': _('Total'),
-			'fieldname': 'total',
-			'fieldtype': 'Currency',
-			'options': 'currency',
-			'width': 100
-		},
-		{
-			'fieldname': 'currency',
-			'label': _('Currency'),
-			'fieldtype': 'Currency',
-			'width': 80,
-			'hidden': 1
-		}
-	]
+	columns.append({
+		'fieldname': 'currency',
+		'label': _('Currency'),
+		'fieldtype': 'Currency',
+		'width': 80,
+		'hidden': 1
+	})
 
 	return itemised_tax, tax_columns
 
@@ -795,4 +733,3 @@ def add_sub_total_row(item, total_row_map, group_by_value, tax_columns):
 
 	for tax in tax_columns:
 		total_row.setdefault(frappe.scrub(tax + ' Amount'), 0.0)
-		total_row[frappe.scrub(tax + ' Amount')] += flt(item[frappe.scrub(tax + ' Amount')])
