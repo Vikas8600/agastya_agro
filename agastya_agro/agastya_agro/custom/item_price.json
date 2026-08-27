@@ -58,7 +58,8 @@
    "search_index": 0,
    "translatable": 0,
    "unique": 0,
-   "width": null
+   "width": null,
+   "is_system_generated": 1
   },
   {
    "_assign": null,
@@ -118,11 +119,65 @@
    "search_index": 0,
    "translatable": 0,
    "unique": 0,
-   "width": null
+   "width": null,
+   "is_system_generated": 1
   }
  ],
  "custom_perms": [],
  "doctype": "Item Price",
- "property_setters": [],
+ "property_setters": [
+  {
+   "_assign": null,
+   "_comments": null,
+   "_liked_by": null,
+   "_user_tags": null,
+   "creation": "2025-06-11 15:40:07.207249",
+   "default_value": null,
+   "doc_type": "Item Price",
+   "docstatus": 0,
+   "doctype_or_field": "DocType",
+   "field_name": null,
+   "idx": 0,
+   "is_system_generated": 0,
+   "modified": "2025-06-11 15:40:07.207249",
+   "modified_by": "Administrator",
+   "module": null,
+   "name": "Item Price-main-field_order",
+   "owner": "Administrator",
+   "parent": null,
+   "parentfield": null,
+   "parenttype": null,
+   "property": "field_order",
+   "property_type": "Data",
+   "row_name": null,
+   "value": "[\"item_code\", \"uom\", \"packing_unit\", \"column_break_17\", \"item_name\", \"brand\", \"item_description\", \"price_list_details\", \"price_list\", \"customer\", \"supplier\", \"batch_no\", \"column_break_3\", \"buying\", \"selling\", \"item_details\", \"currency\", \"col_br_1\", \"price_list_rate\", \"nrv\", \"stock_transfer\", \"section_break_15\", \"valid_from\", \"lead_time_days\", \"column_break_18\", \"valid_upto\", \"section_break_24\", \"note\", \"reference\"]"
+  },
+  {
+   "_assign": null,
+   "_comments": null,
+   "_liked_by": null,
+   "_user_tags": null,
+   "creation": "2025-06-11 15:40:07.310493",
+   "default_value": null,
+   "doc_type": "Item Price",
+   "docstatus": 0,
+   "doctype_or_field": "DocField",
+   "field_name": "nrv",
+   "idx": 0,
+   "is_system_generated": 0,
+   "modified": "2025-06-11 15:40:07.310493",
+   "modified_by": "Administrator",
+   "module": null,
+   "name": "Item Price-nrv-permlevel",
+   "owner": "Administrator",
+   "parent": null,
+   "parentfield": null,
+   "parenttype": null,
+   "property": "permlevel",
+   "property_type": "Int",
+   "row_name": null,
+   "value": "1"
+  }
+ ],
  "sync_on_migrate": 1
 }
