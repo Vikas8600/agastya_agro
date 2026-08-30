@@ -50,6 +50,13 @@ frappe.query_reports["BWBH Expiry Status"] = {
             "options": "Brand"
         },
         {
+            // Rotated monthly; blank falls back to whichever list is enabled.
+            "fieldname": "transfer_price_list",
+            "label": "Stock Transfer Price List",
+            "fieldtype": "Link",
+            "options": "Price List"
+        },
+        {
             "fieldname": "chart_type",
             "label": "Chart Type",
             "fieldtype": "Select",

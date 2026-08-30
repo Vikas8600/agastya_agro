@@ -2,8 +2,8 @@
 # For license information, please see license.txt
 
 import frappe
-import datetime
-from frappe.utils import flt,getdate,cint
+from frappe import _
+from frappe.utils import cint, flt, formatdate, getdate
 
 AGEING_BUCKETS = [
 	(0, 30, "0-30"),
@@ -24,6 +24,17 @@ AGEING_BUCKETS = [
 	(1001, 1100, "1001-1100"),
 ]
 AGEING_ORDER = [b[2] for b in AGEING_BUCKETS] + [">1100", "Expired", "No Expiry Date"]
+
+NEAR_EXPIRY_DAYS = 120
+
+LINK_FILTERS = (
+	("company", "Company"),
+	("item", "Item"),
+	("batch_no", "Batch"),
+	("warehouse", "Warehouse"),
+	("brand", "Brand"),
+	("transfer_price_list", "Price List"),
+)
 
 
 def get_ageing_bucket(days):
@@ -86,16 +97,20 @@ def get_report_summary(rows):
 	total_lines = len(rows)
 	item_count = len({r.get("item_code") for r in rows})
 	total_qty = sum(flt(r.get("balance_qty")) for r in rows)
+	total_value = sum(flt(r.get("transfer_value")) for r in rows)
 
 	return [
 		{"value": item_count, "label": "Items", "datatype": "Int"},
 		{"value": total_lines, "label": "Batch Lines", "datatype": "Int"},
 		{"value": total_qty, "label": "Balance Qty", "datatype": "Float"},
+		{"value": total_value, "label": "Stock Transfer Value", "datatype": "Currency"},
 	]
 
 
 def execute(filters=None):
-	filters = filters or {}
+	filters = frappe._dict(filters or {})
+	validate_filters(filters)
+
 	columns = get_columns(filters)
 	all_rows = get_data(filters)
 	data = filter_by_ageing(all_rows, filters)
@@ -103,621 +118,345 @@ def execute(filters=None):
 	report_summary = get_report_summary(data)
 	return columns, data, None, chart, report_summary
 
+
+def validate_filters(filters):
+	if not filters.get("from_date"):
+		frappe.throw(_("'From Date' is required"))
+
+	if not filters.get("to_date"):
+		frappe.throw(_("'To Date' is required"))
+
+	if getdate(filters.get("from_date")) > getdate(filters.get("to_date")):
+		frappe.throw(
+			_("From Date {0} is after To Date {1}. No stock movement falls in that range.").format(
+				formatdate(filters.get("from_date")), formatdate(filters.get("to_date"))
+			)
+		)
+
+	# Prepared Report and API callers bypass the Link field's own lookup, so the
+	# references are checked here rather than assumed valid.
+	for fieldname, doctype in LINK_FILTERS:
+		value = filters.get(fieldname)
+		if value and not frappe.db.exists(doctype, value):
+			frappe.throw(_("{0} {1} does not exist.").format(_(doctype), frappe.bold(value)))
+
+
 def get_columns(filters):
-	columns = [
-		{"label": "Item", "fieldname": "item_code", "fieldtype": "Link", "options": "Item", "width": 150},
-		{"label": "Item Name", "fieldname": "item_name", "fieldtype": "Data", "width": 150},
-		{"label": "Brand", "fieldname": "brand", "fieldtype": "Data", "width": 150},
-		{"label": "Class", "fieldname": "class", "fieldtype": "Data", "width": 150},
-		{"label": "Warehouse", "fieldname": "warehouse", "fieldtype": "Link", "options": "Warehouse", "width": 150},
-		{"label": "Manufacturing Date", "fieldname": "mfg_date", "fieldtype": "Date", "width": 120},
-		{"label": "Expiry Date", "fieldname": "expiry_date", "fieldtype": "Date", "width": 120},
-		{"label": "Batch No", "fieldname": "batch_no", "fieldtype": "Link", "options": "Batch", "width": 120},
-		{"label": "Old Batch No", "fieldname": "old_batch_no", "fieldtype": "Data", "width": 150},
-		{"label": "Opening Qty", "fieldname": "opening_qty", "fieldtype": "Float", "width": 120},
-		{"label": "In Qty", "fieldname": "in_qty", "fieldtype": "Float", "width": 120},
-		{"label": "Out Qty", "fieldname": "out_qty", "fieldtype": "Float", "width": 120},
-		{"label": "Balance Qty", "fieldname": "balance_qty", "fieldtype": "Float", "width": 120},
-		{"label": "UOM", "fieldname": "uom", "fieldtype": "Data", "width": 120},
-		{"label": "Cases", "fieldname": "cases", "fieldtype": "Float", "width": 120},
-		{"label": "Weight", "fieldname": "weight", "fieldtype": "Float", "width": 120},
-		{"label": "Shelf Life", "fieldname": "shelf_life", "fieldtype": "Int", "width": 120},
-		{"label": "Lapsed Life", "fieldname": "lapsed_life", "fieldtype": "Int", "width": 120},
-		{"label": "Lapsed Days Ageing", "fieldname": "lapsed_ageing", "fieldtype": "Data", "width": 130},
-		{"label": "Balance Life", "fieldname": "balance_life", "fieldtype": "Int", "width": 120},
-		{"label": "Balance Days Ageing", "fieldname": "balance_ageing", "fieldtype": "Data", "width": 140},
-		{"label": "Status", "fieldname": "status", "fieldtype": "Data", "width": 170},
+	return [
+		{"label": _("Item"), "fieldname": "item_code", "fieldtype": "Link", "options": "Item", "width": 150},
+		{"label": _("Item Name"), "fieldname": "item_name", "fieldtype": "Data", "width": 150},
+		{"label": _("Brand"), "fieldname": "brand", "fieldtype": "Data", "width": 150},
+		{"label": _("Class"), "fieldname": "class", "fieldtype": "Data", "width": 150},
+		{"label": _("Warehouse"), "fieldname": "warehouse", "fieldtype": "Link", "options": "Warehouse", "width": 150},
+		{"label": _("Manufacturing Date"), "fieldname": "mfg_date", "fieldtype": "Date", "width": 120},
+		{"label": _("Expiry Date"), "fieldname": "expiry_date", "fieldtype": "Date", "width": 120},
+		{"label": _("Batch No"), "fieldname": "batch_no", "fieldtype": "Link", "options": "Batch", "width": 120},
+		{"label": _("Old Batch No"), "fieldname": "old_batch_no", "fieldtype": "Data", "width": 150},
+		{"label": _("Opening Qty"), "fieldname": "opening_qty", "fieldtype": "Float", "width": 120},
+		{"label": _("In Qty"), "fieldname": "in_qty", "fieldtype": "Float", "width": 120},
+		{"label": _("Out Qty"), "fieldname": "out_qty", "fieldtype": "Float", "width": 120},
+		{"label": _("Balance Qty"), "fieldname": "balance_qty", "fieldtype": "Float", "width": 120},
+		# Requested beside Balance Qty: the transfer rate and what the balance is
+		# worth at it.
+		{"label": _("Stock Transfer Price"), "fieldname": "transfer_price", "fieldtype": "Currency", "width": 150},
+		{"label": _("Value"), "fieldname": "transfer_value", "fieldtype": "Currency", "width": 150},
+		{"label": _("UOM"), "fieldname": "uom", "fieldtype": "Data", "width": 120},
+		{"label": _("Cases"), "fieldname": "cases", "fieldtype": "Float", "width": 120},
+		{"label": _("Weight"), "fieldname": "weight", "fieldtype": "Float", "width": 120},
+		{"label": _("Shelf Life"), "fieldname": "shelf_life", "fieldtype": "Int", "width": 120},
+		{"label": _("Lapsed Life"), "fieldname": "lapsed_life", "fieldtype": "Int", "width": 120},
+		{"label": _("Lapsed Days Ageing"), "fieldname": "lapsed_ageing", "fieldtype": "Data", "width": 130},
+		{"label": _("Balance Life"), "fieldname": "balance_life", "fieldtype": "Int", "width": 120},
+		{"label": _("Balance Days Ageing"), "fieldname": "balance_ageing", "fieldtype": "Data", "width": 140},
+		{"label": _("Status"), "fieldname": "status", "fieldtype": "Data", "width": 170},
 	]
-	return columns
-
-# def get_data(filters):
-# 	from_date = filters.get("from_date")
-# 	to_date = filters.get("to_date")
-# 	warehouse = filters.get("warehouse")
-# 	item = filters.get("item")
-
-# 	conditions = ""
-# 	if warehouse:
-# 		conditions += f" AND sle.warehouse = '{warehouse}'"
-# 	if item:
-# 		conditions += f" AND sle.item_code = '{item}'"
-
-	
-# 	opening_data = frappe.db.sql(f"""
-# 	SELECT
-# 		sle.item_code,
-# 		sle.warehouse,
-# 		COALESCE(sle.batch_no, sbbi.batch_no) AS batch_no,
-# 		SUM(sle.actual_qty) AS opening_qty
-# 	FROM `tabStock Ledger Entry` sle
-# 	LEFT JOIN `tabSerial and Batch Bundle` sbb ON sbb.name = sle.serial_and_batch_bundle
-# 	LEFT JOIN `tabSerial and Batch Entry` sbbi ON sbbi.parent = sbb.name
-# 	WHERE sle.posting_date < %s {conditions}
-# 	 	AND sle.is_cancelled = 0
-#     	AND sle.docstatus < 2
-# 	GROUP BY sle.item_code, sle.warehouse, COALESCE(sle.batch_no, sbbi.batch_no)
-# 	""", (from_date,), as_dict=True)
 
 
-# 	opening_map = {(d.item_code, d.warehouse, d.batch_no): d.opening_qty for d in opening_data}
+def get_conditions(filters, alias, warehouse_column, batch_column):
+	"""Shared WHERE clauses for both halves of the ledger.
+
+	Values are bound, never interpolated: an item or warehouse whose name holds
+	an apostrophe would otherwise break the query outright.
+	"""
+	conditions = [
+		"{0}.docstatus < 2".format(alias),
+		"{0}.is_cancelled = 0".format(alias),
+		"{0}.posting_datetime <= %(to_datetime)s".format(alias),
+	]
+	values = {}
+
+	if filters.get("company"):
+		conditions.append("{0}.company = %(company)s".format(alias))
+		values["company"] = filters.get("company")
+
+	if filters.get("item"):
+		conditions.append("{0}.item_code = %(item)s".format(alias))
+		values["item"] = filters.get("item")
+
+	if filters.get("warehouse"):
+		conditions.append("{0} = %(warehouse)s".format(warehouse_column))
+		values["warehouse"] = filters.get("warehouse")
+
+	if filters.get("batch_no"):
+		conditions.append("{0} = %(batch_no)s".format(batch_column))
+		values["batch_no"] = filters.get("batch_no")
+
+	if filters.get("brand"):
+		conditions.append("item.brand = %(brand)s")
+		values["brand"] = filters.get("brand")
+
+	return conditions, values
 
 
-# 	movement_data = frappe.db.sql(f"""
-# 		SELECT
-# 			sle.item_code,
-# 			item.item_name,
-# 			item.brand,
-# 			item.class AS custom_class,
-# 			sle.warehouse,
-# 			COALESCE(sle.batch_no, sbbi.batch_no) AS batch_no,
-# 			batch.manufacturing_date AS mfg_date,
-# 			batch.expiry_date,
-# 			batch.old_batch_no AS old_batch_no,
-# 			item.stock_uom AS uom,
-# 			item.case_per_unit AS case_per_unit,
-# 			item.weight_per_unit AS wt_per_unit,
-# 			SUM(CASE WHEN sle.actual_qty > 0 THEN sle.actual_qty ELSE 0 END) AS in_qty,
-# 			SUM(CASE WHEN sle.actual_qty < 0 THEN ABS(sle.actual_qty) ELSE 0 END) AS out_qty
-# 		FROM `tabStock Ledger Entry` sle
-# 		LEFT JOIN `tabSerial and Batch Bundle` sbb ON sbb.name = sle.serial_and_batch_bundle
-# 		LEFT JOIN `tabSerial and Batch Entry` sbbi ON sbbi.parent = sbb.name
-# 		LEFT JOIN `tabBatch` batch ON batch.name = COALESCE(sle.batch_no, sbbi.batch_no)
-# 		LEFT JOIN `tabItem` item ON item.name = sle.item_code
-# 		WHERE sle.posting_date BETWEEN %s AND %s
-# 			AND sle.is_cancelled = 0
-# 			AND sle.docstatus < 2
-# 			{conditions}
-# 		GROUP BY sle.item_code, sle.warehouse, COALESCE(sle.batch_no, sbbi.batch_no)
+def get_ledger_balances(filters):
+	"""Opening, in and out per item / warehouse / batch, aggregated in the database.
 
-# 	""", (from_date, to_date), as_dict=True)
+	The opening balance is every movement before From Date, so the ledger has to
+	be read from the beginning of time either way. What it does not have to do is
+	hand a row per voucher back to Python — the split is done here, so the result
+	is one row per batch rather than a million.
 
-# 		# GROUP BY sle.item_code, sle.warehouse, COALESCE(sle.batch_no, sbbi.batch_no)
-# 		# WHERE sle.posting_date BETWEEN %s AND %s {conditions}
+	Item is joined only when a brand filter is set. That join is what holds a
+	metadata lock on the Item table, and holding it for the length of this scan
+	is enough to block a schema change on the whole site.
+	"""
+	to_datetime = "{0} 23:59:59".format(getdate(filters.get("to_date")))
 
-	
+	# A voucher is netted before it is called a receipt or an issue, the way
+	# Batch-Wise Balance History does it: a reconciliation that writes +110 and
+	# -80 against one batch is a receipt of 30, not both at once.
+	aggregate = """
+		sum(case when v.posting_date < %(from_date)s then v.qty else 0 end) as opening_qty,
+		sum(case when v.posting_date >= %(from_date)s and v.qty > 0 then v.qty else 0 end) as in_qty,
+		sum(case when v.posting_date >= %(from_date)s and v.qty < 0 then -v.qty else 0 end) as out_qty
+	"""
 
-# 	data = []
+	base_values = {
+		"from_date": getdate(filters.get("from_date")),
+		"to_datetime": to_datetime,
+	}
 
-# 	for d in movement_data:
-# 		opening_qty = opening_map.get((d.item_code, d.warehouse, d.batch_no), 0)
-# 		balance_qty = opening_qty + d.in_qty - d.out_qty
+	balances = {}
 
-# 		shelf_life = None
-# 		lapsed_life = None
-# 		balance_life = None
-# 		status = ""
-# 		if d.mfg_date and d.expiry_date:
-# 			shelf_life = (d.expiry_date - d.mfg_date).days
+	# Batches recorded straight on the ledger row.
+	conditions, values = get_conditions(filters, "sle", "sle.warehouse", "sle.batch_no")
+	conditions.append("ifnull(sle.batch_no, '') != ''")
+	values.update(base_values)
 
-# 			today = frappe.utils.getdate(frappe.utils.nowdate())
-# 			lapsed_life = (today - d.mfg_date).days
-# 			balance_life = (d.expiry_date - today).days
-# 			status = "Expired" if balance_life <= 0 else "Near Expiry" if balance_life > 0 and balance_life < 120 else "More Than 120 Days" 
+	collect(
+		balances,
+		"""
+		select v.item_code, v.warehouse, v.batch_no, {aggregate}
+		from (
+			select sle.item_code, sle.warehouse, sle.batch_no, sle.voucher_no,
+				max(sle.posting_date) as posting_date, sum(sle.actual_qty) as qty
+			from `tabStock Ledger Entry` sle
+			{brand_join}
+			where {conditions}
+			group by sle.item_code, sle.warehouse, sle.batch_no, sle.voucher_no
+		) v
+		group by v.item_code, v.warehouse, v.batch_no
+	""".format(
+			aggregate=aggregate,
+			brand_join=brand_join(filters),
+			conditions=" and ".join(conditions),
+		),
+		values,
+	)
 
-# 		conv_factor = frappe.get_value(
-# 			"UOM Conversion Detail",
-# 			{'parent': d.item_code, 'is_alternate_uom': 1},
-# 			'conversion_factor'
-# 			)
+	# Batches recorded through a Serial and Batch Bundle instead.
+	conditions, values = get_conditions(
+		filters, "sle", "batch_package.warehouse", "batch_package.batch_no"
+	)
+	conditions.append("sle.has_batch_no = 1")
+	values.update(base_values)
 
-# 		cases = (flt(balance_qty) / flt(conv_factor)) if conv_factor else 0
+	collect(
+		balances,
+		"""
+		select v.item_code, v.warehouse, v.batch_no, {aggregate}
+		from (
+			select sle.item_code, batch_package.warehouse, batch_package.batch_no, sle.voucher_no,
+				max(sle.posting_date) as posting_date, sum(batch_package.qty) as qty
+			from `tabStock Ledger Entry` sle
+			inner join `tabSerial and Batch Entry` batch_package
+				on batch_package.parent = sle.serial_and_batch_bundle
+			{brand_join}
+			where {conditions}
+			group by sle.item_code, batch_package.warehouse, batch_package.batch_no, sle.voucher_no
+		) v
+		group by v.item_code, v.warehouse, v.batch_no
+	""".format(
+			aggregate=aggregate,
+			brand_join=brand_join(filters),
+			conditions=" and ".join(conditions),
+		),
+		values,
+	)
 
-# 		row = {
-# 			"item_code": d.item_code,
-# 			"item_name": d.item_name,
-# 			"wt_per_unit":d.wt_per_unit,
-# 			"case_per_unit":d.case_per_unit,
-# 			"brand": d.brand,
-# 			"class": d.custom_class,
-# 			"warehouse": d.warehouse,
-# 			"batch_no": d.batch_no,
-# 			"old_batch_no": d.old_batch_no,
-# 			"opening_qty": opening_qty,
-# 			"in_qty": d.in_qty,
-# 			"out_qty": d.out_qty,
-# 			"balance_qty": balance_qty,
-# 			"uom": d.uom,
-# 			"cases": cases,
-# 			"weight": balance_qty * (d.wt_per_unit or 0),
-# 			"mfg_date": d.mfg_date,
-# 			"expiry_date": d.expiry_date,
-# 			"shelf_life": shelf_life,
-# 			"lapsed_life": lapsed_life,
-# 			"balance_life": balance_life,
-# 			"status": status,
-# 		}
+	return balances
 
-# 		data.append(row)
 
-# 	return data
+def brand_join(filters):
+	return "inner join `tabItem` item on item.name = sle.item_code" if filters.get("brand") else ""
 
-# def get_data(filters):
-# 	from_date = filters.get("from_date")
-# 	to_date = filters.get("to_date")
-# 	warehouse = filters.get("warehouse")
-# 	item = filters.get("item")
 
-# 	if not from_date:
-# 		frappe.throw("'From Date' is required")
-# 	if not to_date:
-# 		frappe.throw("'To Date' is required")
+def collect(balances, query, values):
+	"""Fold one half of the ledger into the running per-batch totals."""
+	for row in frappe.db.sql(query, values, as_dict=1):
+		key = (row.item_code, row.warehouse, row.batch_no or "")
+		entry = balances.setdefault(
+			key, frappe._dict(opening_qty=0.0, in_qty=0.0, out_qty=0.0)
+		)
+		entry.opening_qty += flt(row.opening_qty)
+		entry.in_qty += flt(row.in_qty)
+		entry.out_qty += flt(row.out_qty)
 
-# 	wh_cond = ""
-# 	if warehouse:
-# 		wh_cond = f" AND sle.warehouse = '{warehouse}'"
 
-# 	item_cond = ""
-# 	if item:
-# 		item_cond = f" AND sle.item_code = '{item}'"
+def get_transfer_prices(item_codes, filters):
+	"""Rate per item on the stock transfer price list.
 
-# 	to_datetime = to_date + " 23:59:59"
+	The list is rotated monthly and only one is ever enabled, so the enabled one
+	is the current one. Its rows carry validity dates that lapse with the month;
+	they are deliberately not applied, because a rate that has just lapsed is
+	still the rate the stock moved at, and filtering on them would empty the
+	column until the next list is loaded.
+	"""
+	prices = {}
+	if not item_codes:
+		return prices
 
-# 	query_batch_no = f"""
-# 		SELECT
-# 			sle.item_code,
-# 			sle.warehouse,
-# 			sle.batch_no,
-# 			sle.posting_date,
-# 			SUM(sle.actual_qty) AS actual_qty,
-# 			SUM(sle.stock_value_difference) AS stock_value_difference
-# 		FROM `tabStock Ledger Entry` sle
-# 		WHERE sle.docstatus < 2
-# 		  AND sle.is_cancelled = 0
-# 		  AND sle.batch_no IS NOT NULL
-# 		  AND sle.batch_no != ''
-# 		  AND sle.posting_datetime <= %s
-# 		  {wh_cond}
-# 		  {item_cond}
-# 		GROUP BY sle.voucher_no, sle.batch_no, sle.item_code, sle.warehouse
-# 	"""
-# 	sle_batch_no = frappe.db.sql(query_batch_no, (to_datetime,), as_dict=True) or []
+	price_list = filters.get("transfer_price_list") or frappe.db.get_value(
+		"Price List", {"enabled": 1, "name": ("like", "%STOCK-TRANSFER%")}, "name"
+	)
+	if not price_list:
+		return prices
 
-# 	query_bundle = f"""
-# 		SELECT
-# 			sle.item_code,
-# 			batch_package.warehouse AS warehouse,
-# 			batch_package.batch_no,
-# 			sle.posting_date,
-# 			SUM(batch_package.qty) AS actual_qty,
-# 			SUM(batch_package.stock_value_difference) AS stock_value_difference
-# 		FROM `tabStock Ledger Entry` sle
-# 		INNER JOIN `tabSerial and Batch Entry` batch_package
-# 			ON batch_package.parent = sle.serial_and_batch_bundle
-# 		WHERE sle.docstatus < 2
-# 		  AND sle.is_cancelled = 0
-# 		  AND sle.has_batch_no = 1
-# 		  AND sle.posting_datetime <= %s
-# 		  {(" AND batch_package.warehouse = '%s'" % warehouse) if (warehouse and not wh_cond) else ""}
-# 		  {(" AND sle.item_code = '%s'" % item) if (item and not item_cond) else ""}
-# 		GROUP BY sle.voucher_no, batch_package.batch_no, batch_package.warehouse
-# 	"""
-# 	# Note: we use same to_datetime
-# 	sle_bundle = frappe.db.sql(query_bundle, (to_datetime,), as_dict=True) or []
+	for row in frappe.db.get_all(
+		"Item Price",
+		filters={"price_list": price_list, "item_code": ("in", list(item_codes))},
+		fields=["item_code", "price_list_rate"],
+	):
+		prices.setdefault(row.item_code, flt(row.price_list_rate))
 
-# 	# combine both kinds of SLE entries (this mirrors standard get_stock_ledger_entries)
-# 	all_sle = sle_batch_no + sle_bundle
+	return prices
 
-# 	# Build item-warehouse-batch map exactly like standard iwb_map
-# 	from frappe.utils import getdate, flt, cint
-# 	float_precision = cint(frappe.db.get_default("float_precision")) or 3
 
-# 	iwb_map = {}
-# 	from_date_dt = getdate(from_date)
-# 	to_date_dt = getdate(to_date)
+def get_reference_maps(item_codes, batch_nos, filters):
+	refs = frappe._dict(item_docs={}, batches={}, conv_factors={}, transfer_prices={})
 
-# 	for d in all_sle:
-# 		item_code = d.get("item_code")
-# 		warehouse_key = d.get("warehouse")
-# 		batch_no = d.get("batch_no") or ""
+	if item_codes:
+		for row in frappe.db.sql(
+			"""
+			select name, item_name, brand, `class` as item_class,
+				stock_uom, case_per_unit, weight_per_unit
+			from `tabItem` where name in %(items)s
+		""",
+			{"items": list(item_codes)},
+			as_dict=1,
+		):
+			refs.item_docs[row.name] = row
 
-# 		iwb_map.setdefault(item_code, {}).setdefault(warehouse_key, {}).setdefault(
-# 			batch_no,
-# 			frappe._dict(
-# 				{"opening_qty": 0.0, "in_qty": 0.0, "out_qty": 0.0, "bal_qty": 0.0, "bal_value": 0.0}
-# 			),
-# 		)
-# 		qty_dict = iwb_map[item_code][warehouse_key][batch_no]
+		# Alternate-UOM conversion factor per item. An item with more than one
+		# alternate UOM keeps the first, matching what the single-value lookup
+		# this replaced would have returned.
+		for row in frappe.db.sql(
+			"""
+			select parent, conversion_factor
+			from `tabUOM Conversion Detail`
+			where is_alternate_uom = 1 and parent in %(items)s
+			order by idx
+		""",
+			{"items": list(item_codes)},
+			as_dict=1,
+		):
+			refs.conv_factors.setdefault(row.parent, row.conversion_factor)
 
-# 		# posting_date may be datetime or date — convert to date for comparisons
-# 		posting_date = d.get("posting_date")
-# 		if isinstance(posting_date, str):
-# 			# when posting_date comes as string date
-# 			try:
-# 				post_dt = getdate(posting_date)
-# 			except Exception:
-# 				post_dt = posting_date
-# 		else:
-# 			post_dt = getdate(posting_date)
+		refs.transfer_prices = get_transfer_prices(item_codes, filters)
 
-# 		# Opening (before from_date) OR movement (within date range)
-# 		if post_dt < from_date_dt:
-# 			qty_dict.opening_qty = flt(qty_dict.opening_qty, float_precision) + flt(d.get("actual_qty"), float_precision)
-# 		elif post_dt >= from_date_dt and post_dt <= to_date_dt:
-# 			if flt(d.get("actual_qty")) > 0:
-# 				qty_dict.in_qty = flt(qty_dict.in_qty, float_precision) + flt(d.get("actual_qty"), float_precision)
-# 			else:
-# 				qty_dict.out_qty = flt(qty_dict.out_qty, float_precision) + abs(flt(d.get("actual_qty"), float_precision))
+	if batch_nos:
+		for row in frappe.db.sql(
+			"""
+			select name, manufacturing_date, expiry_date, old_batch_no
+			from `tabBatch` where name in %(batches)s
+		""",
+			{"batches": list(batch_nos)},
+			as_dict=1,
+		):
+			refs.batches[row.name] = row
 
-# 		# balance and balance value are cumulative regardless of date (as standard)
-# 		qty_dict.bal_qty = flt(qty_dict.bal_qty, float_precision) + flt(d.get("actual_qty"), float_precision)
-# 		qty_dict.bal_value += flt(d.get("stock_value_difference"), float_precision)
+	return refs
 
-# 	# Now build final rows from iwb_map ensuring we include batches that have only opening_qty
-# 	data = []
-# 	# We'll need item fields and batch fields for each row
-# 	for item_code in sorted(iwb_map):
-# 		# if item filter provided, skip otherwise
-# 		if item and item != item_code:
-# 			continue
-
-# 		# get item static fields once
-# 		item_doc = frappe.get_doc("Item", item_code) if item_code else None
-# 		item_name = item_doc.item_name if item_doc else frappe.db.get_value("Item", item_code, "item_name")
-# 		brand = item_doc.brand if item_doc else frappe.db.get_value("Item", item_code, "brand")
-# 		custom_class = item_doc.get("class") if item_doc else frappe.db.get_value("Item", item_code, "class")
-# 		uom = item_doc.stock_uom if item_doc else frappe.db.get_value("Item", item_code, "stock_uom")
-# 		case_per_unit = item_doc.case_per_unit if item_doc else frappe.db.get_value("Item", item_code, "case_per_unit")
-# 		wt_per_unit = item_doc.weight_per_unit if item_doc else frappe.db.get_value("Item", item_code, "weight_per_unit")
-
-# 		for wh in sorted(iwb_map[item_code]):
-# 			# warehouse filter already applied in queries, but double-check
-# 			if warehouse and wh != warehouse:
-# 				continue
-
-# 			for batch_no in sorted(iwb_map[item_code][wh]):
-# 				qty_dict = iwb_map[item_code][wh][batch_no]
-
-# 				# only include rows that have opening/in/out/bal (same behaviour as standard)
-# 				if not (qty_dict.opening_qty or qty_dict.in_qty or qty_dict.out_qty or qty_dict.bal_qty):
-# 					continue
-
-# 				opening_qty = flt(qty_dict.opening_qty, float_precision)
-# 				in_qty = flt(qty_dict.in_qty, float_precision)
-# 				out_qty = flt(qty_dict.out_qty, float_precision)
-# 				balance_qty = flt(qty_dict.bal_qty, float_precision)
-
-# 				# batch fields
-# 				mfg_date = frappe.db.get_value("Batch", batch_no, "manufacturing_date") if batch_no else None
-# 				expiry_date = frappe.db.get_value("Batch", batch_no, "expiry_date") if batch_no else None
-# 				old_batch_no = frappe.db.get_value("Batch", batch_no, "old_batch_no") if batch_no else None
-
-# 				# shelf life calculations (same as your old code)
-# 				shelf_life = None
-# 				lapsed_life = None
-# 				balance_life = None
-# 				status = ""
-# 				if mfg_date and expiry_date:
-# 					shelf_life = (expiry_date - mfg_date).days if hasattr(expiry_date, "day") else None
-# 					today = frappe.utils.getdate(frappe.utils.nowdate())
-# 					lapsed_life = (today - mfg_date).days if hasattr(mfg_date, "day") else None
-# 					balance_life = (expiry_date - today).days if hasattr(expiry_date, "day") else None
-# 					status = "Expired" if balance_life <= 0 else "Near Expiry" if balance_life > 0 and balance_life < 120 else "More Than 120 Days"
-
-# 				# conv factor for cases (same as you had)
-# 				conv_factor = frappe.get_value(
-# 					"UOM Conversion Detail",
-# 					{'parent': item_code, 'is_alternate_uom': 1},
-# 					'conversion_factor'
-# 				)
-# 				cases = (flt(balance_qty) / flt(conv_factor)) if conv_factor else 0
-
-# 				row = {
-# 					"item_code": item_code,
-# 					"item_name": item_name,
-# 					"wt_per_unit": wt_per_unit,
-# 					"case_per_unit": case_per_unit,
-# 					"brand": brand,
-# 					"class": custom_class,
-# 					"warehouse": wh,
-# 					"batch_no": batch_no,
-# 					"old_batch_no": old_batch_no,
-# 					"opening_qty": opening_qty,
-# 					"in_qty": in_qty,
-# 					"out_qty": out_qty,
-# 					"balance_qty": balance_qty,
-# 					"uom": uom,
-# 					"cases": cases,
-# 					"weight": balance_qty * (wt_per_unit or 0),
-# 					"mfg_date": mfg_date,
-# 					"expiry_date": expiry_date,
-# 					"shelf_life": shelf_life,
-# 					"lapsed_life": lapsed_life,
-# 					"balance_life": balance_life,
-# 					"status": status,
-# 				}
-
-# 				data.append(row)
-
-# 	return data
 
 def get_data(filters):
-    from_date = filters.get("from_date")
-    to_date = filters.get("to_date")
-    warehouse = filters.get("warehouse")
-    item = filters.get("item")
-    brand = filters.get("brand")
+	balances = get_ledger_balances(filters)
+	if not balances:
+		return []
 
-    if not from_date:
-        frappe.throw("'From Date' is required")
-    if not to_date:
-        frappe.throw("'To Date' is required")
+	item_codes = {key[0] for key in balances}
+	batch_nos = {key[2] for key in balances if key[2]}
+	refs = get_reference_maps(item_codes, batch_nos, filters)
 
-    # --- conditions ---
-    wh_cond = f" AND sle.warehouse = '{warehouse}'" if warehouse else ""
-    item_cond = f" AND sle.item_code = '{item}'" if item else ""
-    brand_cond = f" AND item.brand = '{brand}'" if brand else ""
+	today = getdate()
+	data = []
 
-    to_datetime = to_date + " 23:59:59"
+	for key in sorted(balances):
+		item_code, warehouse, batch_no = key
+		qty = balances[key]
 
-    # -----------------------------
-    # 1) Direct SLE batch rows
-    # -----------------------------
-    query_batch_no = f"""
-        SELECT
-            sle.item_code,
-            sle.warehouse,
-            sle.batch_no,
-            sle.posting_date,
-            SUM(sle.actual_qty) AS actual_qty,
-            SUM(sle.stock_value_difference) AS stock_value_difference
-        FROM `tabStock Ledger Entry` sle
-        INNER JOIN `tabItem` item ON item.name = sle.item_code
-        WHERE sle.docstatus < 2
-          AND sle.is_cancelled = 0
-          AND sle.batch_no IS NOT NULL
-          AND sle.batch_no != ''
-          AND sle.posting_datetime <= %s
-          {wh_cond}
-          {item_cond}
-          {brand_cond}
-        GROUP BY sle.voucher_no, sle.batch_no, sle.item_code, sle.warehouse
-    """
+		opening_qty = qty.opening_qty
+		in_qty = qty.in_qty
+		out_qty = qty.out_qty
+		balance_qty = opening_qty + in_qty - out_qty
 
-    sle_batch_no = frappe.db.sql(query_batch_no, (to_datetime,), as_dict=True) or []
+		if not (opening_qty or in_qty or out_qty or balance_qty):
+			continue
 
-    # -----------------------------
-    # 2) Serial & Batch Bundle SLE rows
-    # -----------------------------
-    query_bundle = f"""
-        SELECT
-            sle.item_code,
-            batch_package.warehouse AS warehouse,
-            batch_package.batch_no,
-            sle.posting_date,
-            SUM(batch_package.qty) AS actual_qty,
-            SUM(batch_package.stock_value_difference) AS stock_value_difference
-        FROM `tabStock Ledger Entry` sle
-        INNER JOIN `tabItem` item ON item.name = sle.item_code
-        INNER JOIN `tabSerial and Batch Entry` batch_package
-            ON batch_package.parent = sle.serial_and_batch_bundle
-        WHERE sle.docstatus < 2
-          AND sle.is_cancelled = 0
-          AND sle.has_batch_no = 1
-          AND sle.posting_datetime <= %s
-          {brand_cond}
-          {f" AND batch_package.warehouse = '{warehouse}'" if warehouse else ""}
-          {f" AND sle.item_code = '{item}'" if item else ""}
-        GROUP BY sle.voucher_no, batch_package.batch_no, batch_package.warehouse
-    """
+		item = refs.item_docs.get(item_code) or frappe._dict()
+		batch = refs.batches.get(batch_no) or frappe._dict()
 
-    sle_bundle = frappe.db.sql(query_bundle, (to_datetime,), as_dict=True) or []
+		shelf_life = lapsed_life = balance_life = None
+		status = ""
+		if batch.manufacturing_date and batch.expiry_date:
+			shelf_life = (batch.expiry_date - batch.manufacturing_date).days
+			lapsed_life = (today - batch.manufacturing_date).days
+			balance_life = (batch.expiry_date - today).days
 
-    # -------------------------------------------
-    # Combine SLE list identical to ERPNext logic
-    # -------------------------------------------
-    all_sle = sle_batch_no + sle_bundle
+			if balance_life <= 0:
+				status = "Expired"
+			elif balance_life < NEAR_EXPIRY_DAYS:
+				status = "Near Expiry"
+			else:
+				status = "More Than {0} Days".format(NEAR_EXPIRY_DAYS)
 
-    # Build iwb_map
-    float_precision = cint(frappe.db.get_default("float_precision")) or 3
-    iwb_map = {}
-    from_date_dt = getdate(from_date)
-    to_date_dt = getdate(to_date)
+		conv_factor = refs.conv_factors.get(item_code)
+		transfer_price = flt(refs.transfer_prices.get(item_code))
 
-    for d in all_sle:
-        item_code = d.get("item_code")
-        wh = d.get("warehouse")
-        batch_no = d.get("batch_no") or ""
+		data.append({
+			"item_code": item_code,
+			"item_name": item.item_name,
+			"brand": item.brand,
+			"class": item.item_class,
+			"warehouse": warehouse,
+			"batch_no": batch_no,
+			"old_batch_no": batch.old_batch_no,
+			"opening_qty": opening_qty,
+			"in_qty": in_qty,
+			"out_qty": out_qty,
+			"balance_qty": balance_qty,
+			"transfer_price": transfer_price,
+			"transfer_value": transfer_price * balance_qty,
+			"uom": item.stock_uom,
+			"cases": (flt(balance_qty) / flt(conv_factor)) if conv_factor else 0,
+			"weight": balance_qty * flt(item.weight_per_unit),
+			"mfg_date": batch.manufacturing_date,
+			"expiry_date": batch.expiry_date,
+			"shelf_life": shelf_life,
+			"lapsed_life": lapsed_life,
+			"lapsed_ageing": get_ageing_bucket(lapsed_life),
+			"balance_life": balance_life,
+			"balance_ageing": get_ageing_bucket(balance_life),
+			"status": status,
+		})
 
-        iwb_map.setdefault(item_code, {}).setdefault(wh, {}).setdefault(
-            batch_no,
-            frappe._dict({
-                "opening_qty": 0.0,
-                "in_qty": 0.0,
-                "out_qty": 0.0,
-                "bal_qty": 0.0,
-                "bal_value": 0.0,
-            })
-        )
-
-        qty_dict = iwb_map[item_code][wh][batch_no]
-
-        post_dt = getdate(d.get("posting_date"))
-
-        # Opening
-        if post_dt < from_date_dt:
-            qty_dict.opening_qty = flt(qty_dict.opening_qty) + flt(d.get("actual_qty"))
-
-        # In / Out
-        elif from_date_dt <= post_dt <= to_date_dt:
-            if flt(d.get("actual_qty")) > 0:
-                qty_dict.in_qty += flt(d.get("actual_qty"))
-            else:
-                qty_dict.out_qty += abs(flt(d.get("actual_qty")))
-
-        # Balances (regardless of range)
-        qty_dict.bal_qty += flt(d.get("actual_qty"))
-        qty_dict.bal_value += flt(d.get("stock_value_difference"))
-
-    # ---------------------------------
-    # Build final output rows
-    # ---------------------------------
-
-    # ------------------------------------------------------------------
-    # Bulk prefetch — replaces per-item/per-batch/per-row lookups below.
-    # Same field values as before, just fetched in a few queries instead
-    # of tens of thousands, so the output rows are unchanged.
-    # ------------------------------------------------------------------
-    item_codes = list(iwb_map.keys())
-
-    batch_nos = set()
-    for ic in iwb_map:
-        for wh in iwb_map[ic]:
-            batch_nos.update(iwb_map[ic][wh].keys())
-    batch_nos.discard("")
-
-    item_meta = {}
-    if item_codes:
-        for it in frappe.db.sql(
-            """SELECT name, item_name, brand, `class` AS item_class,
-                      stock_uom, case_per_unit, weight_per_unit
-               FROM `tabItem` WHERE name IN %(items)s""",
-            {"items": tuple(item_codes)}, as_dict=True):
-            item_meta[it["name"]] = it
-
-    batch_meta = {}
-    if batch_nos:
-        for b in frappe.db.sql(
-            """SELECT name, manufacturing_date, expiry_date, old_batch_no
-               FROM `tabBatch` WHERE name IN %(b)s""",
-            {"b": tuple(batch_nos)}, as_dict=True):
-            batch_meta[b["name"]] = b
-
-    # Alternate-UOM conversion factor per item. For items with a single
-    # alternate UOM this is unambiguous; for the rare item with more than
-    # one, fall back to frappe.get_value to preserve its exact result.
-    conv_map = {}
-    if item_codes:
-        alt_rows = frappe.db.sql(
-            """SELECT parent, conversion_factor
-               FROM `tabUOM Conversion Detail`
-               WHERE is_alternate_uom = 1 AND parent IN %(items)s""",
-            {"items": tuple(item_codes)}, as_dict=True)
-        grouped = {}
-        for r in alt_rows:
-            grouped.setdefault(r["parent"], []).append(r["conversion_factor"])
-        for parent, vals in grouped.items():
-            if len(vals) == 1:
-                conv_map[parent] = vals[0]
-            else:
-                conv_map[parent] = frappe.get_value(
-                    "UOM Conversion Detail",
-                    {"parent": parent, "is_alternate_uom": 1},
-                    "conversion_factor",
-                )
-
-    today = getdate(frappe.utils.nowdate())
-
-    data = []
-
-    for item_code in sorted(iwb_map.keys()):
-        # Item filters
-        if item and item != item_code:
-            continue
-
-        meta = item_meta.get(item_code) or {}
-        item_name = meta.get("item_name")
-        brand_value = meta.get("brand")
-        custom_class = meta.get("item_class")
-        uom = meta.get("stock_uom")
-        case_per_unit = meta.get("case_per_unit")
-        wt_per_unit = meta.get("weight_per_unit")
-
-        # Brand filter (double check)
-        if brand and brand_value != brand:
-            continue
-
-        for wh in sorted(iwb_map[item_code].keys()):
-            if warehouse and wh != warehouse:
-                continue
-
-            for batch_no in sorted(iwb_map[item_code][wh].keys()):
-                qty_dict = iwb_map[item_code][wh][batch_no]
-
-                if not (qty_dict.opening_qty or qty_dict.in_qty or qty_dict.out_qty or qty_dict.bal_qty):
-                    continue
-
-                opening_qty = qty_dict.opening_qty
-                in_qty = qty_dict.in_qty
-                out_qty = qty_dict.out_qty
-                balance_qty = qty_dict.bal_qty
-
-                # Batch fields (prefetched)
-                bmeta = batch_meta.get(batch_no) or {}
-                mfg_date = bmeta.get("manufacturing_date")
-                expiry_date = bmeta.get("expiry_date")
-                old_batch_no = bmeta.get("old_batch_no")
-
-                # Shelf life logic
-                shelf_life = lapsed_life = balance_life = None
-                status = ""
-
-                if mfg_date and expiry_date:
-                    shelf_life = (expiry_date - mfg_date).days
-                    lapsed_life = (today - mfg_date).days
-                    balance_life = (expiry_date - today).days
-
-                    if balance_life <= 0:
-                        status = "Expired"
-                    elif balance_life < 120:
-                        status = "Near Expiry"
-                    else:
-                        status = "More Than 120 Days"
-
-                # Ageing buckets — computed for every row, including batches with
-                # no dates (None life -> "No Expiry Date", negative -> "Expired").
-                lapsed_ageing = get_ageing_bucket(lapsed_life)
-                balance_ageing = get_ageing_bucket(balance_life)
-
-                # Cases (conversion factor prefetched)
-                conv_factor = conv_map.get(item_code)
-
-                cases = (flt(balance_qty) / flt(conv_factor)) if conv_factor else 0
-
-                weight = balance_qty * (wt_per_unit or 0)
-
-                data.append({
-                    "item_code": item_code,
-                    "item_name": item_name,
-                    "brand": brand_value,
-                    "class": custom_class,
-                    "warehouse": wh,
-                    "batch_no": batch_no,
-                    "old_batch_no": old_batch_no,
-                    "opening_qty": opening_qty,
-                    "in_qty": in_qty,
-                    "out_qty": out_qty,
-                    "balance_qty": balance_qty,
-                    "uom": uom,
-                    "cases": cases,
-                    "weight": weight,
-                    "mfg_date": mfg_date,
-                    "expiry_date": expiry_date,
-                    "shelf_life": shelf_life,
-                    "lapsed_life": lapsed_life,
-                    "lapsed_ageing": lapsed_ageing,
-                    "balance_life": balance_life,
-                    "balance_ageing": balance_ageing,
-                    "status": status,
-                })
-
-    return data
+	return data
