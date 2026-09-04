@@ -43,5 +43,19 @@ frappe.query_reports["Daily Payment Summary"] = {
 			"fieldtype": "Link",
 			"options": "Mode of Payment"
 		}
-	]
+	],
+
+	"formatter": function (value, row, column, data, default_formatter) {
+		// The entries behind a row arrive as a comma separated list; turn each
+		// one into a link so it can be opened straight from the report.
+		if (column.fieldname === "payment_entries" && value) {
+			return value.split(",").map(name => {
+				name = name.trim();
+				return `<a href="/app/payment-entry/${encodeURIComponent(name)}"
+						   target="_blank">${frappe.utils.escape_html(name)}</a>`;
+			}).join(", ");
+		}
+
+		return default_formatter(value, row, column, data);
+	}
 };

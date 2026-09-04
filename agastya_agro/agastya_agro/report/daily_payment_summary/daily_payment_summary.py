@@ -48,7 +48,9 @@ def get_data(filters):
 			pe.party as party,
 			pe.party_name as party_name,
 			sum(pe.paid_amount) as paid_amount,
-			cus.sales_person as sales_person
+			cus.sales_person as sales_person,
+			count(pe.name) as entry_count,
+			group_concat(pe.name order by pe.name separator ', ') as payment_entries
 		from `tabPayment Entry` pe
 		inner join `tabCustomer` cus on cus.name = pe.party
 		where {conditions}
@@ -61,13 +63,11 @@ def get_data(filters):
 
 
 def get_conditions(filters):
-	# Money actually received from a customer. Without the type and party
-	# restrictions a refund paid out, or a bank-to-bank internal transfer that
-	# happens to name a customer, would be counted as a collection.
 	conditions = [
 		"pe.docstatus = 1",
 		"pe.payment_type = 'Receive'",
 		"pe.party_type = 'Customer'",
+		"ifnull(pe.custom_is_bounced_cheque, 0) = 0",
 		"pe.posting_date between %(from_date)s and %(to_date)s",
 	]
 	values = {"from_date": filters.from_date, "to_date": filters.to_date}
@@ -114,5 +114,12 @@ def get_columns():
 			"fieldtype": "Link",
 			"options": "Sales Person",
 			"width": 200,
+		},
+		{"label": _("Entries"), "fieldname": "entry_count", "fieldtype": "Int", "width": 80},
+		{
+			"label": _("Payment Entries"),
+			"fieldname": "payment_entries",
+			"fieldtype": "Data",
+			"width": 280,
 		},
 	]
