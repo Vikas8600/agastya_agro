@@ -5,6 +5,8 @@ import frappe
 from frappe import _
 from frappe.utils import add_months, flt, formatdate, get_first_day, getdate, nowdate
 
+from agastya_agro.ledger_exclusions import EXCLUDED_VOUCHER
+
 BUCKETS = [
 	("0-30", 0, 30),
 	("31-60", 31, 60),
@@ -412,21 +414,21 @@ def get_balances(filters, customers):
 	twice this way beats one pass carrying a case expression per column, because
 	the second half spans months rather than years. Closing is then arithmetic
 	rather than a third trip over the whole ledger.
+
+	The movement columns are summed twice over: once over every entry, which is
+	what opening and closing are struck from, and once with the vouchers in
+	EXCLUDED_VOUCHER left out, which is what the report shows. Keeping the
+	balance on the full sum means a voucher flagged on one leg but not the other
+	can only make debit and credit stop tying to closing, where it is plain to
+	see, rather than quietly move the balance and the whole ageing with it.
+
+	The opening sum is deliberately left alone: it is a net figure, and every
+	voucher excluded here posts an equal debit and credit against the same party,
+	so filtering it would cost a second pass over the full history to arrive at
+	the same number.
 	"""
 	fy = get_current_fiscal_year(filters)
 	condition = customer_condition(filters, "gle.party")
-
-	query = """
-		select gle.party, sum(gle.debit) as debit, sum(gle.credit) as credit
-		from `tabGL Entry` gle
-		where gle.is_cancelled = 0
-			and gle.party_type = 'Customer'
-			and gle.party != ''
-			and gle.company = %(company)s
-			and {period}
-			{customer_condition}
-		group by gle.party
-	"""
 
 	values = {
 		"company": filters.company,
@@ -435,39 +437,62 @@ def get_balances(filters, customers):
 		"customers": customers,
 	}
 
+	opening_query = """
+		select gle.party, sum(gle.debit) as debit, sum(gle.credit) as credit
+		from `tabGL Entry` gle
+		where gle.is_cancelled = 0
+			and gle.party_type = 'Customer'
+			and gle.party != ''
+			and gle.company = %(company)s
+			and (gle.posting_date < %(fy_start)s
+				or (gle.is_opening = 'Yes' and gle.posting_date <= %(as_on)s))
+			{customer_condition}
+		group by gle.party
+	"""
+
+	period_query = """
+		select party,
+			sum(debit) - sum(credit) as movement,
+			sum(case when excluded then 0 else debit end) as debit,
+			sum(case when excluded then 0 else credit end) as credit
+		from (
+			select gle.party, gle.debit, gle.credit, ({excluded}) as excluded
+			from `tabGL Entry` gle
+			where gle.is_cancelled = 0
+				and gle.party_type = 'Customer'
+				and gle.party != ''
+				and gle.company = %(company)s
+				and gle.posting_date between %(fy_start)s and %(as_on)s
+				and gle.is_opening = 'No'
+				{customer_condition}
+		) gle
+		group by party
+	"""
+
 	balances = {}
 	for row in frappe.db.sql(
-		query.format(
-			period=(
-				"(gle.posting_date < %(fy_start)s"
-				" or (gle.is_opening = 'Yes' and gle.posting_date <= %(as_on)s))"
-			),
-			customer_condition=condition,
-		),
+		opening_query.format(customer_condition=condition),
 		values,
 		as_dict=1,
 	):
 		balances[row.party] = frappe._dict(
-			opening=flt(row.debit) - flt(row.credit), debit=0.0, credit=0.0
+			opening=flt(row.debit) - flt(row.credit), debit=0.0, credit=0.0, movement=0.0
 		)
 
 	for row in frappe.db.sql(
-		query.format(
-			period=(
-				"gle.posting_date between %(fy_start)s and %(as_on)s"
-				" and gle.is_opening = 'No'"
-			),
-			customer_condition=condition,
-		),
+		period_query.format(excluded=EXCLUDED_VOUCHER, customer_condition=condition),
 		values,
 		as_dict=1,
 	):
-		balance = balances.setdefault(row.party, frappe._dict(opening=0.0, debit=0.0, credit=0.0))
+		balance = balances.setdefault(
+			row.party, frappe._dict(opening=0.0, debit=0.0, credit=0.0, movement=0.0)
+		)
 		balance.debit = flt(row.debit)
 		balance.credit = flt(row.credit)
+		balance.movement = flt(row.movement)
 
 	for balance in balances.values():
-		balance.closing = balance.opening + balance.debit - balance.credit
+		balance.closing = balance.opening + balance.movement
 
 	return balances
 
@@ -524,7 +549,11 @@ def get_billed_by_bucket(filters, customers):
 
 
 def get_collections(filters, customers):
-	"""Receipts banked so far in the month the report is struck in."""
+	"""Receipts banked so far in the month the report is struck in.
+
+	A receipt marked as a bounced cheque never reached the bank, so it is not a
+	collection however the ledger later reverses it.
+	"""
 	collected = {}
 	for row in frappe.db.sql(
 		"""
@@ -533,6 +562,7 @@ def get_collections(filters, customers):
 		where pe.docstatus = 1
 			and pe.payment_type = 'Receive'
 			and pe.party_type = 'Customer'
+			and ifnull(pe.custom_is_bounced_cheque, 0) = 0
 			and pe.company = %(company)s
 			and pe.posting_date between %(month_start)s and %(as_on)s
 			{customer_condition}
